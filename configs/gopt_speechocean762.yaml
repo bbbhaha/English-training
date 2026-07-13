@@ -1,0 +1,60 @@
+seed: 42
+
+data:
+  input_csv: artifacts/speechocean_acoustic_v1/scored_all_splits.csv
+  feature_npz: artifacts/gopt_speechocean762/features.npz
+  alignment_quality: pass
+  min_duration: 0.03
+  score_column: source_score
+  utterance_id_column: utterance_id
+  speaker_id_column: speaker_id
+  split_column: split
+
+features:
+  numeric:
+    - gop_score
+    - target_log_likelihood
+    - competitor_log_likelihood
+    - duration
+    - normalized_duration_by_phone
+  canonical_phone: target_phone
+  phone_group: phone_group
+  position: phone_index
+  max_position: 256
+
+model:
+  phone_embedding_dim: 64
+  group_embedding_dim: 16
+  position_embedding_dim: 32
+  numeric_projection_dim: 64
+  hidden_dim: 192
+  transformer_layers: 2
+  attention_heads: 4
+  dropout: 0.15
+
+training:
+  batch_size: 32
+  epochs: 20
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  early_stopping_patience: 4
+  include_score_one: true
+  output_dir: artifacts/gopt_speechocean762
+
+evaluation:
+  min_precision: 0.40
+  binary_drop_score_one: true
+  error_threshold_score: 1.0
+  core_phones:
+    - R
+    - L
+    - V
+    - W
+    - TH
+    - DH
+    - IH
+    - IY
+    - AE
+    - EH
+    - AH
+    - N

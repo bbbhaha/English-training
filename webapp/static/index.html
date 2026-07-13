@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>端到端音素发音诊断</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="control-panel">
+        <div class="brand-row">
+          <div>
+            <p class="eyebrow">E2E Phone Diagnosis</p>
+            <h1>音素发音诊断</h1>
+          </div>
+          <div class="status-chip" id="modelStatus">就绪</div>
+        </div>
+
+        <div class="prompt-strip" aria-label="Prompt presets">
+          <button class="prompt active" type="button" data-text="MAKE AMERICA GREAT AGAIN">MAGA</button>
+          <button class="prompt" type="button" data-text="MIKE LIKES THE ORANGE ONE">demo</button>
+          <button class="prompt" type="button" data-text="WE CALL IT BEAR">bear</button>
+          <button class="prompt" type="button" data-text="SHE SEES THE BLUE BIRD">sentence</button>
+        </div>
+
+        <label class="field-label" for="targetText">目标文本</label>
+        <textarea id="targetText" rows="2">MAKE AMERICA GREAT AGAIN</textarea>
+
+        <div class="option-row">
+          <label class="toggle">
+            <input id="trimSilence" type="checkbox" checked />
+            <span>去除首尾长静音</span>
+          </label>
+        </div>
+
+        <div class="recorder">
+          <canvas id="waveCanvas" width="880" height="180" aria-label="Audio waveform"></canvas>
+          <div class="recorder-actions">
+            <button class="icon-button primary" type="button" id="recordBtn" title="开始或停止录音">
+              <span id="recordIcon">●</span>
+              <span id="recordText">录音</span>
+            </button>
+            <button class="icon-button" type="button" id="playBtn" title="播放录音" disabled>▶</button>
+            <label class="file-button" title="上传音频">
+              <input id="audioFile" type="file" accept=".wav,.mp3,.m4a,.flac,.ogg,audio/*" />
+              上传
+            </label>
+            <button class="icon-button success" type="button" id="submitBtn" title="诊断" disabled>诊断</button>
+          </div>
+          <audio id="audioPreview" controls></audio>
+        </div>
+      </section>
+
+      <section class="result-panel">
+        <div class="summary-grid">
+          <div class="metric">
+            <span>音素数</span>
+            <strong id="phoneCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>可接受口音</span>
+            <strong id="accentCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>真实错误</span>
+            <strong id="errorCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>需复核</span>
+            <strong id="reviewCount">0</strong>
+          </div>
+        </div>
+
+        <div class="phone-timeline" id="phoneTimeline"></div>
+
+        <div class="artifact-row" id="artifactRow"></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Word</th>
+                <th>Phone</th>
+                <th>Decision</th>
+                <th>Error</th>
+                <th>Align</th>
+                <th>Error Type</th>
+                <th>Trigger</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="resultBody">
+              <tr>
+                <td colspan="8" class="empty">等待录音或上传音频</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <pre class="debug-panel" id="debugPanel">显示调试信息将在这里出现</pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v=DELETION_ONLY_WORD_SUMMARY_DISPLAY_V5"></script>
+  </body>
+</html>

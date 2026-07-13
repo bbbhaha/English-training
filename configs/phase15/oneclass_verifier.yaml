@@ -1,0 +1,6 @@
+oneclass:
+  min_phone_samples: 20
+  min_group_samples: 50
+  contamination: 0.08
+  n_estimators: 50
+  max_samples: 512

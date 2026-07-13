@@ -1,0 +1,10 @@
+{
+  "rl": ["R", "L"],
+  "vw": ["V", "W"],
+  "th": ["TH", "DH"],
+  "front_vowels": ["IY", "IH", "EH", "AE"],
+  "back_vowels": ["UW", "UH", "AO", "AA"],
+  "final_consonants": ["P", "B", "T", "D", "K", "G", "S", "Z", "N", "NG", "M"],
+  "voicing_pairs": ["P", "B", "T", "D", "K", "G", "S", "Z"],
+  "hard_fp_phones": ["L", "N", "IH", "R", "AY"]
+}

@@ -1,0 +1,74 @@
+attribute:
+  high_risk_threshold: 0.55
+  weak_risk_threshold: 0.30
+retrieval:
+  top_k: 5
+  min_same_phone_samples: 5
+  min_group_samples: 20
+  low_similarity_threshold: 0.15
+  positive_margin_threshold: 0.03
+oneclass:
+  min_phone_samples: 20
+  min_group_samples: 50
+  contamination: 0.08
+  n_estimators: 50
+  max_samples: 512
+aggregator:
+  aggregator_mode: weighted_vote
+  min_main_error_score: 0.35
+  min_support_votes: 2
+  final_error_score_threshold: 0.35
+  acceptable_accent_min_error_score: 0.20
+  uncertain_as_error_for_analysis: false
+strict_consensus:
+  min_evidence_count: 2
+  allow_review_alignment: false
+  require_main_model_error: true
+  enabled_phone_groups:
+    - liquid
+    - fricative
+    - vowel
+    - final_consonant
+    - nasal
+  enabled_target_phones:
+    - R
+    - L
+    - V
+    - W
+    - TH
+    - DH
+    - N
+    - NG
+phone_group_thresholds:
+  liquid:
+    final_error_score_threshold: 0.40
+    min_evidence_count: 2
+  fricative:
+    final_error_score_threshold: 0.40
+    min_evidence_count: 2
+  vowel:
+    final_error_score_threshold: 0.45
+    min_evidence_count: 2
+  nasal:
+    final_error_score_threshold: 0.40
+    min_evidence_count: 2
+  final_consonant:
+    final_error_score_threshold: 0.35
+    min_evidence_count: 2
+evaluation:
+  core_phones:
+    - R
+    - L
+    - V
+    - W
+    - F
+    - TH
+    - DH
+    - N
+    - NG
+    - IY
+    - IH
+    - EH
+    - AE
+    - UW
+    - UH

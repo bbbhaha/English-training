@@ -1,0 +1,53 @@
+version: 1
+phone_normalization:
+  strip_stress: true
+rules:
+  - name: th_fronting_or_stopping
+    targets: [TH, DH]
+    predictions: [S, T, F, D, Z]
+    severity: medium
+    intelligibility_error: false
+  - name: r_l_w_confusion
+    targets: [R]
+    predictions: [L, W]
+    severity: medium
+    intelligibility_error: false
+  - name: final_dark_l_error
+    targets: [L]
+    predictions: ["", DEL, SIL]
+    positions: [final]
+    severity: high
+    intelligibility_error: true
+  - name: v_w_f_confusion
+    targets: [V]
+    predictions: [W, F]
+    severity: medium
+    intelligibility_error: true
+  - name: ih_iy_confusion
+    pairs: [[IH, IY]]
+    severity: low
+    intelligibility_error: false
+  - name: ae_eh_confusion
+    pairs: [[AE, EH]]
+    severity: low
+    intelligibility_error: false
+  - name: final_consonant_deletion
+    target_class: consonant
+    predictions: ["", DEL, SIL]
+    positions: [final]
+    severity: high
+    intelligibility_error: true
+  - name: consonant_cluster_reduction
+    context_flag: consonant_cluster
+    predictions: ["", DEL, SIL]
+    severity: high
+    intelligibility_error: true
+  - name: consonant_cluster_epenthesis
+    context_flag: consonant_cluster
+    predictions: [AH, IH, AX]
+    severity: medium
+    intelligibility_error: false
+  - name: voicing_confusion
+    pairs: [[P, B], [T, D], [K, G], [F, V], [S, Z], [SH, ZH], [CH, JH]]
+    severity: medium
+    intelligibility_error: true

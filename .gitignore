@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+data/processed/
+data/raw/
+artifacts/
+outputs/
+reports/
+deliverables/
+
+# Local recordings and generated office documents
+*.wav
+*.mp3
+*.flac
+*.docx
+
+# Local runtime files
+*.log
+.DS_Store
+Thumbs.db

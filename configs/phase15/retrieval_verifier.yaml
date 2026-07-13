@@ -1,0 +1,6 @@
+retrieval:
+  top_k: 5
+  min_same_phone_samples: 5
+  min_group_samples: 20
+  low_similarity_threshold: 0.15
+  positive_margin_threshold: 0.03

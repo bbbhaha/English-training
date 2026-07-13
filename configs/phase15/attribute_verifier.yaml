@@ -1,0 +1,3 @@
+attribute:
+  high_risk_threshold: 0.55
+  weak_risk_threshold: 0.30

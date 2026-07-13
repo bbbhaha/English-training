@@ -1,0 +1,45 @@
+seed: 42
+
+data:
+  features_npz: artifacts/mdd_wav2vec2/features.npz
+  scored_csv: artifacts/speechocean_acoustic_v1/scored_all_splits.csv
+  output_dir: artifacts/candidate_verifier
+  candidate_dir: outputs
+
+candidate_generator:
+  strategy: gop_aggressive
+  target_recall: 0.70
+  min_duration: 0.03
+
+model:
+  audio_projection_dim: 128
+  phone_embedding_dim: 32
+  group_embedding_dim: 16
+  hidden_dim: 128
+  dropout: 0.20
+  use_text_gate: true
+
+training:
+  batch_size: 256
+  epochs: 12
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 3
+  positive_weight: 1.0
+  negative_weight: 1.0
+  use_contrastive_loss: false
+  contrastive_weight: 0.05
+  contrastive_temperature: 0.2
+  hard_phones:
+    - L
+    - N
+    - IH
+    - R
+    - AY
+
+evaluation:
+  min_precision: 0.40
+  fpr_targets:
+    - 0.03
+    - 0.04
+    - 0.05

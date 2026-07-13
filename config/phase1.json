@@ -1,0 +1,16 @@
+{
+  "random_seed": 20260622,
+  "speech_ocean": {
+    "recognizability_threshold": 1.0,
+    "standardness_threshold": 1.8
+  },
+  "l2_arctic": {
+    "speaker_splits": {
+      "train": ["BWC", "LXC"],
+      "dev": ["NCC"],
+      "test": ["TXHC"]
+    }
+  },
+  "silence_phones": ["", "SIL", "SP", "SPN"]
+}
+

@@ -1,0 +1,74 @@
+seed: 42
+
+data:
+  feature_npz: artifacts/gopt_speechocean762/features.npz
+  output_dir: artifacts/hiertfr_minimal_speechocean
+
+model:
+  phone_embedding_dim: 64
+  group_embedding_dim: 16
+  position_embedding_dim: 32
+  numeric_projection_dim: 64
+  hidden_dim: 192
+  phone_transformer_layers: 2
+  word_transformer_layers: 1
+  attention_heads: 4
+  dropout: 0.15
+  word_pooling: mean
+
+training:
+  batch_size: 24
+  epochs: 20
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  early_stopping_patience: 4
+  alpha_mdd: 0.2
+  beta_word: 0.1
+  drop_score1_for_mdd: true
+  drop_score1_all: false
+  min_duration: 0.03
+
+evaluation:
+  min_precision: 0.40
+  fpr_targets:
+    - 0.03
+    - 0.04
+    - 0.05
+  core_phone_sets:
+    focus_single:
+      - L
+      - N
+      - IH
+      - R
+      - AY
+    rl:
+      - R
+      - L
+    vw:
+      - V
+      - W
+    th:
+      - TH
+      - DH
+    front_vowels:
+      - IY
+      - IH
+      - EH
+      - AE
+    back_vowels:
+      - UW
+      - UH
+      - AO
+      - AA
+    final_consonants:
+      - P
+      - B
+      - T
+      - D
+      - K
+      - G
+      - S
+      - Z
+      - N
+      - NG
+      - M
