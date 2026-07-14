@@ -24,15 +24,16 @@ def align_audio_to_text(
     phones: list[str] | None = None,
     models_path: Path | None = None,
     duration_priors: dict[str, float] | None = None,
+    target_word_table: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, G2PResult | None]:
-    g2p = text_to_phones(text or "") if phones is None else None
+    g2p = text_to_phones(text or "", target_word_table=target_word_table) if phones is None else None
     phone_rows = g2p.phones if g2p is not None else [
         {"word": "", "word_index": 0, "target_phone": normalize_phone(p), "phone_index": i, "g2p_source": "provided"}
         for i, p in enumerate(phones or [])
     ]
     target_phones = [normalize_phone(row["target_phone"]) for row in phone_rows if normalize_phone(row["target_phone"])]
     if not target_phones:
-        return _bad_alignment_rows(phone_rows, "missing_phone_sequence"), g2p
+        return ensure_alignment_coverage(pd.DataFrame(phone_rows), _bad_alignment_rows(phone_rows, "missing_phone_sequence")), g2p
     try:
         if models_path is None or not models_path.exists():
             raise FileNotFoundError("No acoustic alignment model was provided.")
@@ -57,14 +58,53 @@ def align_audio_to_text(
                 method_failed=False,
             )
             rows.append(_alignment_row(row, start_ms, end_ms, quality, "segmental_viterbi_gaussian_v1"))
-        return pd.DataFrame(rows), g2p
+        return ensure_alignment_coverage(pd.DataFrame(phone_rows), pd.DataFrame(rows)), g2p
     except Exception as error:
         rows = _equal_length_rows(
             wav_path,
             phone_rows,
             reason=f"alignment_failed;possible_text_audio_mismatch;{error}",
         )
-        return rows, g2p
+        return ensure_alignment_coverage(pd.DataFrame(phone_rows), rows), g2p
+
+
+def ensure_alignment_coverage(g2p_phone_df: pd.DataFrame, alignment_df: pd.DataFrame) -> pd.DataFrame:
+    """Left join alignment results onto all expected G2P phone rows."""
+    expected = g2p_phone_df.copy()
+    alignment = alignment_df.copy()
+    if expected.empty:
+        return alignment
+    keys = [column for column in ("word_index", "phone_index") if column in expected.columns and column in alignment.columns]
+    if "word_index" not in keys:
+        raise KeyError("G2P and alignment frames must contain word_index.")
+    expected["word_index"] = pd.to_numeric(expected["word_index"], errors="raise").astype(int)
+    alignment["word_index"] = pd.to_numeric(alignment["word_index"], errors="coerce").astype("Int64")
+    if "phone_index" in keys:
+        expected["phone_index"] = pd.to_numeric(expected["phone_index"], errors="raise").astype(int)
+        alignment["phone_index"] = pd.to_numeric(alignment["phone_index"], errors="coerce").astype("Int64")
+    authoritative = {"word", "target_phone", "g2p_source", "g2p_status", "g2p_error", "word_phone_index"}
+    alignment_columns = keys + [column for column in alignment.columns if column not in keys and column not in authoritative]
+    out = expected.merge(
+        alignment[alignment_columns].drop_duplicates(keys, keep="last"),
+        on=keys,
+        how="left",
+    )
+    missing = out.get("start_ms", pd.Series(float("nan"), index=out.index)).isna() | out.get(
+        "end_ms", pd.Series(float("nan"), index=out.index)
+    ).isna()
+    for column in ("start_ms", "end_ms", "duration_ms"):
+        if column not in out.columns:
+            out[column] = float("nan")
+    if "alignment_quality" not in out.columns:
+        out["alignment_quality"] = "bad"
+    out.loc[missing, "alignment_quality"] = "bad"
+    if "review_reason" not in out.columns:
+        out["review_reason"] = ""
+    out.loc[missing, "review_reason"] = "alignment_missing"
+    if "alignment_method" not in out.columns:
+        out["alignment_method"] = "none"
+    out.loc[missing & out["alignment_method"].fillna("").eq(""), "alignment_method"] = "none"
+    return out.sort_values("phone_index", kind="stable").reset_index(drop=True)
 
 
 def judge_alignment_quality(
@@ -124,6 +164,9 @@ def _alignment_row(row: dict, start_ms: float, end_ms: float, quality: str, meth
         "alignment_method": method,
         "review_reason": note,
         "g2p_source": row.get("g2p_source", ""),
+        "g2p_status": row.get("g2p_status", "success"),
+        "g2p_error": row.get("g2p_error", ""),
+        "word_phone_index": row.get("word_phone_index", 0),
     }
 
 

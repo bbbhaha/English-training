@@ -40,6 +40,7 @@ from predict_pronunciation import (  # noqa: E402
     _prediction_frame,
     _prepare_audio_for_alignment,
     _score_phase1,
+    ensure_prediction_coverage,
 )
 from pronunciation.deletion_detector import build_word_summary, detect_word_deletions  # noqa: E402
 from pronunciation.decision import apply_deletion_only_override  # noqa: E402
@@ -47,6 +48,7 @@ from pronunciation.final_word_decision import (  # noqa: E402
     merge_word_diagnosis_into_phones,
     run_word_level_diagnosis,
 )
+from pronunciation.target_words import build_target_word_table, ensure_word_summary_coverage  # noqa: E402
 
 
 WEB_OUTPUT_DIR = ROOT / "outputs" / "webapp"
@@ -152,8 +154,14 @@ def diagnose(audio_path: Path, text: str, utterance_id: str, speaker_id: str, tr
         trim_silence=trim_silence,
     )
 
+    target_word_table = build_target_word_table(text, utterance_id=utterance_id)
     audio_for_alignment = _prepare_audio_for_alignment(args)
-    alignment, g2p = align_audio_to_text(audio_for_alignment, text=text, models_path=args.alignment_models)
+    alignment, g2p = align_audio_to_text(
+        audio_for_alignment,
+        text=text,
+        models_path=args.alignment_models,
+        target_word_table=target_word_table,
+    )
     save_alignment_csv(alignment, alignment_output)
     if g2p is not None:
         write_g2p_json(g2p, g2p_output)
@@ -165,14 +173,18 @@ def diagnose(audio_path: Path, text: str, utterance_id: str, speaker_id: str, tr
     frame = _apply_manual_calibrator(frame, args.manual_calibrator, args.true_error_threshold)
     frame, _ = detect_word_deletions(frame, mode=args.decision_mode)
     out = _final_output(frame, args)
+    out = ensure_prediction_coverage(out, target_word_table, g2p)
     word_summary = build_word_summary(out, mode=args.decision_mode)
+    word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
     out, word_summary = apply_deletion_only_override(
         out,
         word_summary,
         detect_deletion_as_error=args.detect_deletion_as_error,
     )
     word_summary = run_word_level_diagnosis(out, word_summary)
+    word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
     out = merge_word_diagnosis_into_phones(out, word_summary)
+    out = ensure_prediction_coverage(out, target_word_table, g2p)
     out.to_csv(output, index=False, encoding="utf-8-sig")
     word_summary.to_csv(word_summary_output, index=False, encoding="utf-8-sig")
 
@@ -374,6 +386,7 @@ def apply_word_summary_display(
     )
     summary_columns = [
         "word_index",
+        "word",
         "possible_missing_word",
         "word_decision",
         "word_error_type",
@@ -386,11 +399,24 @@ def apply_word_summary_display(
             summary[column] = ""
 
     overlapping = [column for column in summary_columns[1:] if column in prediction.columns]
-    display_df = prediction.drop(columns=overlapping).merge(
-        summary[summary_columns],
-        on="word_index",
-        how="left",
-    )
+    prediction = prediction.drop(columns=overlapping)
+    if prediction.empty:
+        phone_details = pd.DataFrame(columns=["word_index"])
+    else:
+        def join_phones(values: pd.Series) -> str:
+            return " ".join(value for value in values.fillna("").astype(str) if value)
+
+        aggregations = {
+            column: "first"
+            for column in prediction.columns
+            if column not in {"word_index", "target_phone", "word"}
+        }
+        if "target_phone" in prediction.columns:
+            aggregations["target_phone"] = join_phones
+        phone_details = prediction.groupby("word_index", sort=False, dropna=False).agg(aggregations).reset_index()
+    display_df = summary.merge(phone_details, on="word_index", how="left")
+    if "word" not in display_df.columns:
+        display_df["word"] = ""
 
     print("display columns:", display_df.columns.tolist(), flush=True)
     debug_columns = [

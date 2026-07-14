@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
+from .target_words import build_target_word_table
+
 
 BUILTIN_CMU = {
     "A": ["AH"],
@@ -16,6 +20,8 @@ BUILTIN_CMU = {
     "AND": ["AE", "N", "D"],
     "ARE": ["AA", "R"],
     "BEAR": ["B", "EH", "R"],
+    "BIRD": ["B", "ER", "D"],
+    "BLUE": ["B", "L", "UW"],
     "CALL": ["K", "AO", "L"],
     "CAN": ["K", "AE", "N"],
     "DO": ["D", "UW"],
@@ -37,6 +43,7 @@ BUILTIN_CMU = {
     "ONE": ["W", "AH", "N"],
     "ORANGE": ["AO", "R", "AH", "N", "JH"],
     "SHE": ["SH", "IY"],
+    "SEES": ["S", "IY", "Z"],
     "THE": ["DH", "AH"],
     "THIS": ["DH", "IH", "S"],
     "TO": ["T", "UW"],
@@ -82,24 +89,38 @@ def tokenize(text: str) -> list[str]:
     return [token for token in normalized.split(" ") if token]
 
 
-def text_to_phones(text: str) -> G2PResult:
-    words = tokenize(text)
+def text_to_phones(text: str, target_word_table: pd.DataFrame | None = None) -> G2PResult:
+    target_words = build_target_word_table(text) if target_word_table is None else target_word_table.copy()
+    return target_word_table_to_phones(target_words, text=text)
+
+
+def target_word_table_to_phones(target_word_table: pd.DataFrame, text: str = "") -> G2PResult:
+    """Produce at least one phone row for every canonical target word."""
     cmu = _load_cmudict()
     fallback = _load_g2p_en()
     word_rows: list[dict[str, Any]] = []
     phone_rows: list[dict[str, Any]] = []
     phone_index = 0
-    for word_index, word in enumerate(words):
+    for _, target_row in target_word_table.sort_values("word_index", kind="stable").iterrows():
+        word_index = int(target_row["word_index"])
+        word = str(target_row.get("normalized_word", target_row.get("word", ""))).upper()
         phones, source = _lookup_word(word, cmu, fallback)
+        g2p_status = "success" if phones else "failed"
+        g2p_error = "" if phones else "oov_or_g2p_failed"
+        if not phones:
+            phones = ["<UNK>"]
         start = phone_index
-        for phone in phones:
+        for word_phone_index, phone in enumerate(phones):
             phone_rows.append(
                 {
                     "word": word,
                     "word_index": word_index,
                     "target_phone": phone,
                     "phone_index": phone_index,
+                    "word_phone_index": word_phone_index,
                     "g2p_source": source,
+                    "g2p_status": g2p_status,
+                    "g2p_error": g2p_error,
                 }
             )
             phone_index += 1
@@ -113,9 +134,12 @@ def text_to_phones(text: str) -> G2PResult:
                 "phone_index_start": start,
                 "phone_index_end": end,
                 "is_oov": source == "oov",
+                "g2p_status": g2p_status,
+                "g2p_error": g2p_error,
             }
         )
-    return G2PResult(text=text, normalized_text=" ".join(words), words=word_rows, phones=phone_rows)
+    normalized_text = " ".join(str(row["word"]) for row in word_rows)
+    return G2PResult(text=text, normalized_text=normalized_text, words=word_rows, phones=phone_rows)
 
 
 def write_g2p_json(result: G2PResult, path: Path) -> None:

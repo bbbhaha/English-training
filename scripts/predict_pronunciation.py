@@ -32,6 +32,7 @@ from pronunciation.text_audio_consistency import (
     merge_consistency_into_phone_frame,
     merge_consistency_into_word_summary,
 )
+from pronunciation.target_words import build_target_word_table, ensure_word_summary_coverage
 from pronunciation.verifier import add_verifier_defaults
 
 
@@ -68,7 +69,14 @@ def main() -> None:
     args = parser.parse_args()
 
     audio_for_alignment = _prepare_audio_for_alignment(args)
-    alignment, g2p = align_audio_to_text(audio_for_alignment, text=args.text, models_path=args.alignment_models)
+    utterance_id = args.utterance_id or args.audio.stem
+    target_word_table = build_target_word_table(args.text, utterance_id=utterance_id)
+    alignment, g2p = align_audio_to_text(
+        audio_for_alignment,
+        text=args.text,
+        models_path=args.alignment_models,
+        target_word_table=target_word_table,
+    )
     if args.alignment_output:
         save_alignment_csv(alignment, args.alignment_output)
     if args.g2p_output and g2p is not None:
@@ -106,6 +114,7 @@ def main() -> None:
             asr_confidence=1.0 if args.asr_transcript else 0.7,
         )
     out = _final_output(frame, args)
+    out = ensure_prediction_coverage(out, target_word_table, g2p)
     word_summary = build_word_summary(out, mode=args.decision_mode)
     if asr_check_enabled:
         word_summary = merge_consistency_into_word_summary(
@@ -113,6 +122,7 @@ def main() -> None:
             consistency,
             asr_transcript=str(consistency_meta.get("asr_transcript", "")),
         )
+    word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
     if args.decision_mode == "deletion_only":
         out, word_summary = apply_deletion_only_override(
             out,
@@ -120,7 +130,9 @@ def main() -> None:
             detect_deletion_as_error=args.detect_deletion_as_error,
         )
     word_summary = run_word_level_diagnosis(out, word_summary, word_asr_consistency)
+    word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
     out = merge_word_diagnosis_into_phones(out, word_summary)
+    out = ensure_prediction_coverage(out, target_word_table, g2p)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(args.output, index=False, encoding="utf-8-sig")
     if args.word_summary_output:
@@ -143,6 +155,66 @@ def _prediction_frame(alignment: pd.DataFrame, args: argparse.Namespace) -> pd.D
     out.loc[bad_alignment, "decision"] = "uncertain_review"
     out.loc[bad_alignment, "confidence"] = 0.0
     return out
+
+
+def ensure_prediction_coverage(
+    prediction_df: pd.DataFrame,
+    target_word_table: pd.DataFrame,
+    g2p_result=None,
+) -> pd.DataFrame:
+    """Ensure final predictions contain every expected target phone and word."""
+    prediction = prediction_df.copy()
+    if g2p_result is not None and getattr(g2p_result, "phones", None):
+        expected = pd.DataFrame(g2p_result.phones)
+    else:
+        expected = target_word_table[["word_index", "word"]].copy()
+        expected["target_phone"] = "<UNK>"
+        expected["phone_index"] = range(len(expected))
+        expected["word_phone_index"] = 0
+        expected["g2p_source"] = "missing"
+        expected["g2p_status"] = "failed"
+        expected["g2p_error"] = "oov_or_g2p_failed"
+    if expected.empty:
+        return prediction
+    keys = ["word_index", "phone_index"]
+    for frame in (expected, prediction):
+        for key in keys:
+            if key not in frame.columns:
+                frame[key] = pd.NA
+            frame[key] = pd.to_numeric(frame[key], errors="coerce").astype("Int64")
+    authoritative = {
+        "word", "target_phone", "word_phone_index", "g2p_source", "g2p_status", "g2p_error"
+    }
+    prediction_columns = keys + [
+        column for column in prediction.columns if column not in keys and column not in authoritative
+    ]
+    out = expected.merge(
+        prediction[prediction_columns].drop_duplicates(keys, keep="last"),
+        on=keys,
+        how="left",
+    )
+    missing = out["decision"].isna() if "decision" in out.columns else pd.Series(True, index=out.index)
+    defaults = {
+        "decision": "uncertain_review",
+        "error_type": "alignment_issue",
+        "alignment_quality": "bad",
+        "review_reason": "missing_from_prediction_pipeline",
+        "manual_calibrated_error_probability": 0.0,
+        "confidence": 0.0,
+        "prob_correct": 0.5,
+        "model_error_score": 0.5,
+    }
+    for column, default in defaults.items():
+        if column not in out.columns:
+            out[column] = default
+        else:
+            out.loc[missing & out[column].isna(), column] = default
+    target_meta = target_word_table.set_index("word_index")
+    if "utterance_id" not in out.columns:
+        out["utterance_id"] = out["word_index"].map(target_meta["utterance_id"])
+    else:
+        out["utterance_id"] = out["utterance_id"].fillna(out["word_index"].map(target_meta["utterance_id"]))
+    return out.sort_values("phone_index", kind="stable").reset_index(drop=True)
 
 
 def _prepare_audio_for_alignment(args: argparse.Namespace) -> Path:
@@ -264,6 +336,9 @@ def _final_output(frame: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame
         "alignment_quality",
         "review_reason",
         "g2p_source",
+        "g2p_status",
+        "g2p_error",
+        "word_phone_index",
         "possible_missing_word",
         "missing_word_reason",
         "deletion_trigger_source",
