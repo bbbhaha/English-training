@@ -226,6 +226,9 @@ function renderRows(rows) {
       <td>${row.display_error_type || ""}</td>
       <td>${row.deletion_trigger_source || "none"}</td>
       <td class="reason">${row.missing_word_reason || ""}</td>
+      <td>${row.lexicon_display || row.lexicon_status || ""}</td>
+      <td>${row.g2p_source || ""}</td>
+      <td>${row.g2p_confidence || ""}</td>
     `;
     resultBody.appendChild(tr);
   });

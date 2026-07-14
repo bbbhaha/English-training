@@ -24,10 +24,12 @@ class PronunciationE2ETests(unittest.TestCase):
 
     def test_oov_is_marked(self):
         result = text_to_phones("ZZZUNKNOWNWORD")
-        self.assertEqual(result.words[0]["g2p_source"], "oov")
-        self.assertEqual(result.words[0]["phones"], ["<UNK>"])
-        self.assertEqual(result.words[0]["g2p_status"], "failed")
-        self.assertEqual(result.phones[0]["target_phone"], "<UNK>")
+        self.assertEqual(result.words[0]["word"], "ZZZUNKNOWNWORD")
+        self.assertIn(result.words[0]["lexicon_status"], {"g2p_en", "phonemizer", "failed"})
+        if result.words[0]["lexicon_status"] == "failed":
+            self.assertEqual(result.words[0]["phones"], ["<UNK>"])
+            self.assertEqual(result.words[0]["g2p_status"], "failed")
+            self.assertEqual(result.phones[0]["target_phone"], "<UNK>")
 
     def test_alignment_quality_bad_for_extreme_duration(self):
         self.assertEqual(

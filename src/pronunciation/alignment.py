@@ -82,10 +82,16 @@ def ensure_alignment_coverage(g2p_phone_df: pd.DataFrame, alignment_df: pd.DataF
     if "phone_index" in keys:
         expected["phone_index"] = pd.to_numeric(expected["phone_index"], errors="raise").astype(int)
         alignment["phone_index"] = pd.to_numeric(alignment["phone_index"], errors="coerce").astype("Int64")
-    authoritative = {"word", "target_phone", "g2p_source", "g2p_status", "g2p_error", "word_phone_index"}
-    alignment_columns = keys + [column for column in alignment.columns if column not in keys and column not in authoritative]
+    alignment_fields = [
+        column
+        for column in ("start_ms", "end_ms", "duration_ms", "alignment_quality", "alignment_method", "review_reason")
+        if column in alignment.columns
+    ]
+    right = alignment[keys + alignment_fields].drop_duplicates(keys, keep="last").rename(
+        columns={"review_reason": "_alignment_review_reason"}
+    )
     out = expected.merge(
-        alignment[alignment_columns].drop_duplicates(keys, keep="last"),
+        right,
         on=keys,
         how="left",
     )
@@ -100,7 +106,10 @@ def ensure_alignment_coverage(g2p_phone_df: pd.DataFrame, alignment_df: pd.DataF
     out.loc[missing, "alignment_quality"] = "bad"
     if "review_reason" not in out.columns:
         out["review_reason"] = ""
-    out.loc[missing, "review_reason"] = "alignment_missing"
+    alignment_reason = out.pop("_alignment_review_reason") if "_alignment_review_reason" in out.columns else pd.Series("", index=out.index)
+    successful_g2p = out.get("g2p_status", pd.Series("success", index=out.index)).astype(str).ne("failed")
+    out.loc[successful_g2p & alignment_reason.fillna("").ne(""), "review_reason"] = alignment_reason
+    out.loc[missing & successful_g2p, "review_reason"] = "alignment_missing"
     if "alignment_method" not in out.columns:
         out["alignment_method"] = "none"
     out.loc[missing & out["alignment_method"].fillna("").eq(""), "alignment_method"] = "none"
@@ -167,6 +176,13 @@ def _alignment_row(row: dict, start_ms: float, end_ms: float, quality: str, meth
         "g2p_status": row.get("g2p_status", "success"),
         "g2p_error": row.get("g2p_error", ""),
         "word_phone_index": row.get("word_phone_index", 0),
+        "lexicon_status": row.get("lexicon_status", ""),
+        "g2p_confidence": row.get("g2p_confidence", ""),
+        "pronunciation_variant_id": row.get("pronunciation_variant_id", 0),
+        "num_pronunciation_variants": row.get("num_pronunciation_variants", 1),
+        "selected_pronunciation": row.get("selected_pronunciation", ""),
+        "decision": row.get("decision", ""),
+        "error_type": row.get("error_type", ""),
     }
 
 

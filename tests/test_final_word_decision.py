@@ -26,6 +26,16 @@ class FinalWordDecisionTests(unittest.TestCase):
         }])
         self.assertEqual(fuse_word_decisions(frame).iloc[0]["final_word_decision"], "alignment_issue")
 
+    def test_failed_g2p_is_review_not_true_error(self):
+        frame = pd.DataFrame([{
+            "lexicon_status": "failed",
+            "deletion_decision": "alignment_issue",
+            "mispronunciation_decision": "mispronounced",
+        }])
+        result = fuse_word_decisions(frame).iloc[0]
+        self.assertEqual(result["final_word_decision"], "g2p_issue")
+        self.assertEqual(result["final_error_type"], "g2p_issue")
+
     def test_america_manual_asr_deletion_reaches_final_output(self):
         phones = pd.DataFrame([
             {"word": "AMERICA", "word_index": 1, "target_phone": phone, "duration_ms": 20.0,

@@ -26,6 +26,7 @@ def word_mispronunciation_detector(
         "asr_edit_op": "uncertain",
         "alignment_quality": "",
         "manual_calibrated_error_probability": float("nan"),
+        "lexicon_status": "custom",
     }.items():
         if column not in out.columns:
             out[column] = default
@@ -39,6 +40,8 @@ def word_mispronunciation_detector(
         gop_score = _number(row.get("ctc_gop_score"))
         alignment = str(row.get("alignment_quality", "")).strip().lower()
         asr_op = str(row.get("asr_edit_op", "uncertain")).strip().lower()
+        lexicon_status = str(row.get("lexicon_status", "custom")).strip().lower()
+        inferred_pronunciation = lexicon_status in {"g2p_en", "phonemizer"}
         confusion = _strongest_confusion(target, predicted, confusion_config)
         severity = confusion["severity"]
         common = bool(confusion["is_common_mandarin_error"])
@@ -57,12 +60,18 @@ def word_mispronunciation_detector(
         if pd.notna(legacy):
             evidence.append(f"debug_legacy_error_probability={legacy:.3f}")
 
-        if alignment in BAD_ALIGNMENT:
+        if lexicon_status == "failed":
+            decision, score = "uncertain_review", 0.0
+            evidence.append("g2p_failed")
+        elif alignment in BAD_ALIGNMENT:
             decision, score = "uncertain_review", 0.0
             evidence.append("bad_alignment")
         elif asr_op == "delete":
             decision, score = "uncertain_review", 0.0
             evidence.append("handled_by_deletion_detector")
+        elif inferred_pronunciation and (phone_difference or low_acoustic or moderate_acoustic or asr_op == "substitute"):
+            decision, score = "uncertain_review", 0.45
+            evidence.append("inferred_pronunciation_requires_review")
         elif common and severity == "low":
             decision = "acceptable_accent" if not low_acoustic else "uncertain_review"
             score = 0.25 if decision == "acceptable_accent" else 0.5

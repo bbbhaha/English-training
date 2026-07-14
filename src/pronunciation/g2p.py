@@ -8,50 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from .lexicon import get_best_pronunciation
 from .target_words import build_target_word_table
-
-
-BUILTIN_CMU = {
-    "A": ["AH"],
-    "AGAIN": ["AH", "G", "EH", "N"],
-    "AMERICA": ["AH", "M", "EH", "R", "IH", "K", "AH"],
-    "AMERICAN": ["AH", "M", "EH", "R", "AH", "K", "AH", "N"],
-    "AN": ["AE", "N"],
-    "AND": ["AE", "N", "D"],
-    "ARE": ["AA", "R"],
-    "BEAR": ["B", "EH", "R"],
-    "BIRD": ["B", "ER", "D"],
-    "BLUE": ["B", "L", "UW"],
-    "CALL": ["K", "AO", "L"],
-    "CAN": ["K", "AE", "N"],
-    "DO": ["D", "UW"],
-    "FAMILY": ["F", "AE", "M", "AH", "L", "IY"],
-    "GREAT": ["G", "R", "EY", "T"],
-    "HAVE": ["HH", "AE", "V"],
-    "HE": ["HH", "IY"],
-    "HER": ["HH", "ER"],
-    "HERE": ["HH", "IH", "R"],
-    "HIM": ["HH", "IH", "M"],
-    "I": ["AY"],
-    "IF": ["IH", "F"],
-    "IS": ["IH", "Z"],
-    "IT": ["IH", "T"],
-    "IT'S": ["IH", "T", "S"],
-    "LIKE": ["L", "AY", "K"],
-    "MAKE": ["M", "EY", "K"],
-    "MIKE": ["M", "AY", "K"],
-    "ONE": ["W", "AH", "N"],
-    "ORANGE": ["AO", "R", "AH", "N", "JH"],
-    "SHE": ["SH", "IY"],
-    "SEES": ["S", "IY", "Z"],
-    "THE": ["DH", "AH"],
-    "THIS": ["DH", "IH", "S"],
-    "TO": ["T", "UW"],
-    "WE": ["W", "IY"],
-    "WELL": ["W", "EH", "L"],
-    "WITH": ["W", "IH", "TH"],
-    "YOU": ["Y", "UW"],
-}
 
 
 @dataclass
@@ -96,17 +54,17 @@ def text_to_phones(text: str, target_word_table: pd.DataFrame | None = None) -> 
 
 def target_word_table_to_phones(target_word_table: pd.DataFrame, text: str = "") -> G2PResult:
     """Produce at least one phone row for every canonical target word."""
-    cmu = _load_cmudict()
-    fallback = _load_g2p_en()
     word_rows: list[dict[str, Any]] = []
     phone_rows: list[dict[str, Any]] = []
     phone_index = 0
     for _, target_row in target_word_table.sort_values("word_index", kind="stable").iterrows():
         word_index = int(target_row["word_index"])
         word = str(target_row.get("normalized_word", target_row.get("word", ""))).upper()
-        phones, source = _lookup_word(word, cmu, fallback)
-        g2p_status = "success" if phones else "failed"
-        g2p_error = "" if phones else "oov_or_g2p_failed"
+        lookup = get_best_pronunciation(word)
+        phones = list(lookup["selected_pronunciation"])
+        source = str(lookup["g2p_source"])
+        g2p_status = "success" if lookup["lexicon_status"] != "failed" else "failed"
+        g2p_error = str(lookup["g2p_error"])
         if not phones:
             phones = ["<UNK>"]
         start = phone_index
@@ -121,6 +79,14 @@ def target_word_table_to_phones(target_word_table: pd.DataFrame, text: str = "")
                     "g2p_source": source,
                     "g2p_status": g2p_status,
                     "g2p_error": g2p_error,
+                    "lexicon_status": lookup["lexicon_status"],
+                    "g2p_confidence": lookup["g2p_confidence"],
+                    "pronunciation_variant_id": lookup["pronunciation_variant_id"],
+                    "num_pronunciation_variants": lookup["num_pronunciation_variants"],
+                    "selected_pronunciation": " ".join(phones),
+                    "decision": "uncertain_review" if g2p_status == "failed" else "",
+                    "error_type": "g2p_issue" if g2p_status == "failed" else "",
+                    "review_reason": "g2p_failed" if g2p_status == "failed" else "",
                 }
             )
             phone_index += 1
@@ -133,9 +99,17 @@ def target_word_table_to_phones(target_word_table: pd.DataFrame, text: str = "")
                 "g2p_source": source,
                 "phone_index_start": start,
                 "phone_index_end": end,
-                "is_oov": source == "oov",
+                "is_oov": lookup["lexicon_status"] == "failed",
                 "g2p_status": g2p_status,
                 "g2p_error": g2p_error,
+                "pronunciations": lookup["pronunciations"],
+                "selected_pronunciation": lookup["selected_pronunciation"],
+                "lexicon_status": lookup["lexicon_status"],
+                "g2p_confidence": lookup["g2p_confidence"],
+                "pronunciation_variant_id": lookup["pronunciation_variant_id"],
+                "num_pronunciation_variants": lookup["num_pronunciation_variants"],
+                "decision": "uncertain_review" if g2p_status == "failed" else "",
+                "error_type": "g2p_issue" if g2p_status == "failed" else "",
             }
         )
     normalized_text = " ".join(str(row["word"]) for row in word_rows)
@@ -145,53 +119,3 @@ def target_word_table_to_phones(target_word_table: pd.DataFrame, text: str = "")
 def write_g2p_json(result: G2PResult, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-def _lookup_word(word: str, cmu: dict[str, list[str]], fallback) -> tuple[list[str], str]:
-    normalized = _strip_possessive(word)
-    if normalized in cmu:
-        return cmu[normalized], "cmudict"
-    if normalized in BUILTIN_CMU:
-        return BUILTIN_CMU[normalized], "builtin_cmudict_subset"
-    if fallback is not None:
-        try:
-            phones = [_clean_phone(p) for p in fallback(normalized) if _clean_phone(p)]
-            if phones:
-                return phones, "g2p_en"
-        except Exception:
-            pass
-    return [], "oov"
-
-
-def _strip_possessive(word: str) -> str:
-    if word.endswith("'S") and len(word) > 2:
-        return word[:-2]
-    return word
-
-
-def _clean_phone(phone: str) -> str:
-    value = str(phone).strip().upper()
-    return re.sub(r"\d+$", "", value)
-
-
-def _load_cmudict() -> dict[str, list[str]]:
-    try:
-        import cmudict
-
-        entries = cmudict.entries()
-        out: dict[str, list[str]] = {}
-        for word, phones in entries:
-            key = word.upper()
-            out.setdefault(key, [_clean_phone(p) for p in phones])
-        return out
-    except Exception:
-        return {}
-
-
-def _load_g2p_en():
-    try:
-        from g2p_en import G2p
-
-        return G2p()
-    except Exception:
-        return None

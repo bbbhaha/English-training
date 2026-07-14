@@ -1,0 +1,52 @@
+SHE:
+  - [SH, IY]
+SEES:
+  - [S, IY, Z]
+THE:
+  - [DH, AH]
+  - [DH, IY]
+BLUE:
+  - [B, L, UW]
+BIRD:
+  - [B, ER, D]
+MAKE:
+  - [M, EY, K]
+AMERICA:
+  - [AH, M, EH, R, IH, K, AH]
+GREAT:
+  - [G, R, EY, T]
+AGAIN:
+  - [AH, G, EH, N]
+  - [AH, G, EY, N]
+
+# Small offline baseline used when optional G2P packages are unavailable.
+A: [[AH]]
+AMERICAN: [[AH, M, EH, R, AH, K, AH, N]]
+AN: [[AE, N]]
+AND: [[AE, N, D]]
+ARE: [[AA, R]]
+BEAR: [[B, EH, R]]
+CALL: [[K, AO, L]]
+CAN: [[K, AE, N]]
+DO: [[D, UW]]
+FAMILY: [[F, AE, M, AH, L, IY]]
+HAVE: [[HH, AE, V]]
+HE: [[HH, IY]]
+HER: [[HH, ER]]
+HERE: [[HH, IH, R]]
+HIM: [[HH, IH, M]]
+I: [[AY]]
+IF: [[IH, F]]
+IS: [[IH, Z]]
+IT: [[IH, T]]
+"IT'S": [[IH, T, S]]
+LIKE: [[L, AY, K]]
+MIKE: [[M, AY, K]]
+ONE: [[W, AH, N]]
+ORANGE: [[AO, R, AH, N, JH]]
+THIS: [[DH, IH, S]]
+TO: [[T, UW]]
+WE: [[W, IY]]
+WELL: [[W, EH, L]]
+WITH: [[W, IH, TH]]
+YOU: [[Y, UW]]

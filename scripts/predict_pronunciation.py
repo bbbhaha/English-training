@@ -176,6 +176,9 @@ def ensure_prediction_coverage(
         expected["g2p_error"] = "oov_or_g2p_failed"
     if expected.empty:
         return prediction
+    expected = expected.drop(
+        columns=[column for column in ("decision", "error_type", "review_reason") if column in expected.columns]
+    )
     keys = ["word_index", "phone_index"]
     for frame in (expected, prediction):
         for key in keys:
@@ -183,7 +186,9 @@ def ensure_prediction_coverage(
                 frame[key] = pd.NA
             frame[key] = pd.to_numeric(frame[key], errors="coerce").astype("Int64")
     authoritative = {
-        "word", "target_phone", "word_phone_index", "g2p_source", "g2p_status", "g2p_error"
+        "word", "target_phone", "word_phone_index", "g2p_source", "g2p_status", "g2p_error",
+        "lexicon_status", "g2p_confidence", "pronunciation_variant_id",
+        "num_pronunciation_variants", "selected_pronunciation",
     }
     prediction_columns = keys + [
         column for column in prediction.columns if column not in keys and column not in authoritative
@@ -209,6 +214,12 @@ def ensure_prediction_coverage(
             out[column] = default
         else:
             out.loc[missing & out[column].isna(), column] = default
+    g2p_failed = out.get("g2p_status", pd.Series("success", index=out.index)).fillna("failed").astype(str).eq("failed")
+    out.loc[g2p_failed, "decision"] = "uncertain_review"
+    out.loc[g2p_failed, "error_type"] = "g2p_issue"
+    out.loc[g2p_failed, "alignment_quality"] = "bad"
+    out.loc[g2p_failed, "review_reason"] = "g2p_failed"
+    out.loc[g2p_failed, "confidence"] = 0.0
     target_meta = target_word_table.set_index("word_index")
     if "utterance_id" not in out.columns:
         out["utterance_id"] = out["word_index"].map(target_meta["utterance_id"])
@@ -317,6 +328,12 @@ def _final_output(frame: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame
             detect_deletion_as_error=getattr(args, "detect_deletion_as_error", False),
         ),
     )
+    g2p_failed = out.get("g2p_status", pd.Series("success", index=out.index)).fillna("failed").astype(str).eq("failed")
+    out.loc[g2p_failed, "decision"] = "uncertain_review"
+    out.loc[g2p_failed, "error_type"] = "g2p_issue"
+    out.loc[g2p_failed, "alignment_quality"] = "bad"
+    out.loc[g2p_failed, "review_reason"] = "g2p_failed"
+    out.loc[g2p_failed, "confidence"] = 0.0
     keep = [
         "utterance_id",
         "speaker_id",
@@ -339,6 +356,11 @@ def _final_output(frame: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame
         "g2p_status",
         "g2p_error",
         "word_phone_index",
+        "lexicon_status",
+        "g2p_confidence",
+        "pronunciation_variant_id",
+        "num_pronunciation_variants",
+        "selected_pronunciation",
         "possible_missing_word",
         "missing_word_reason",
         "deletion_trigger_source",

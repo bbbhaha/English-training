@@ -34,7 +34,10 @@ def fuse_word_decisions(frame: pd.DataFrame) -> pd.DataFrame:
     for _, row in out.iterrows():
         deletion = str(row.get("deletion_decision", "correct"))
         mispronunciation = str(row.get("mispronunciation_decision", "correct"))
-        if deletion == "deletion":
+        lexicon_status = str(row.get("lexicon_status", "")).strip().lower()
+        if lexicon_status == "failed":
+            final = "g2p_issue"
+        elif deletion == "deletion":
             final = "deletion"
         elif deletion == "possible_deletion":
             final = "possible_deletion"
@@ -87,6 +90,7 @@ def merge_word_diagnosis_into_phones(phone_frame: pd.DataFrame, word_frame: pd.D
         "acceptable_accent": ("acceptable_accent", "acceptable_accent", "common_mandarin_accent_pattern"),
         "uncertain_review": ("uncertain_review", "mispronunciation_uncertain", "insufficient_word_mispronunciation_evidence"),
         "correct": ("correct", "", ""),
+        "g2p_issue": ("uncertain_review", "g2p_issue", "g2p_failed"),
     }
     for label, (decision, error_type, reason) in mapping.items():
         mask = final.eq(label)
@@ -126,6 +130,14 @@ def _aggregate_phone_debug(phone_frame: pd.DataFrame) -> pd.DataFrame:
                 "speaker_id": _first_text(group, "speaker_id"),
                 "manual_calibrated_error_probability": float(legacy.mean()) if legacy.notna().any() else float("nan"),
                 "phone_group": "+".join(phone_groups),
+                "lexicon_status": _first_text(group, "lexicon_status"),
+                "g2p_source": _first_text(group, "g2p_source"),
+                "g2p_confidence": _first_text(group, "g2p_confidence"),
+                "g2p_status": _first_text(group, "g2p_status"),
+                "g2p_error": _first_text(group, "g2p_error"),
+                "pronunciation_variant_id": _first_text(group, "pronunciation_variant_id"),
+                "num_pronunciation_variants": _first_text(group, "num_pronunciation_variants"),
+                "selected_pronunciation": _first_text(group, "selected_pronunciation"),
             }
         )
     return pd.DataFrame(rows)

@@ -75,6 +75,20 @@ class WebappDisplayOnlyTests(unittest.TestCase):
         self.assertIn("row.display_error_type", app_js)
         self.assertNotIn("row.manual_calibrated_error_probability", app_js)
 
+    def test_g2p_issue_is_displayed_as_review(self):
+        prediction = prediction_frame()
+        prediction["lexicon_status"] = "failed"
+        prediction["g2p_source"] = "failed"
+        prediction["g2p_confidence"] = "low"
+        summary = summary_frame("g2p_issue", False)
+        summary["lexicon_status"] = "failed"
+        summary["g2p_source"] = "failed"
+        summary["g2p_confidence"] = "low"
+        display = apply_word_summary_display(prediction, summary)
+        self.assertEqual(display.loc[0, "display_decision"], "需复核")
+        self.assertEqual(display.loc[0, "display_error"], "词典缺失")
+        self.assertEqual(display.loc[0, "display_error_type"], "g2p_issue")
+
 
 if __name__ == "__main__":
     unittest.main()

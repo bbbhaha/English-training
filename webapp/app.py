@@ -61,6 +61,10 @@ DISPLAY_COLUMNS = [
     "display_error_type",
     "deletion_trigger_source",
     "missing_word_reason",
+    "lexicon_status",
+    "g2p_source",
+    "g2p_confidence",
+    "lexicon_display",
 ]
 
 
@@ -347,6 +351,11 @@ def _row_for_api(row: dict[str, object]) -> dict[str, object]:
         "alignment_quality": row.get("alignment_quality", ""),
         "review_reason": row.get("review_reason", ""),
         "g2p_source": row.get("g2p_source", ""),
+        "lexicon_status": row.get("lexicon_status", ""),
+        "g2p_confidence": row.get("g2p_confidence", ""),
+        "lexicon_display": "自动推测发音"
+        if str(row.get("lexicon_status", "")) in {"g2p_en", "phonemizer"}
+        else str(row.get("lexicon_status", "")),
         "possible_missing_word": _boolish(row.get("possible_missing_word", False)),
         "missing_word_reason": row.get("missing_word_reason", ""),
         "deletion_trigger_source": row.get("deletion_trigger_source", "none"),
@@ -393,6 +402,9 @@ def apply_word_summary_display(
         "deletion_trigger_source",
         "missing_word_reason",
         "word_alignment_quality",
+        "lexicon_status",
+        "g2p_source",
+        "g2p_confidence",
     ]
     for column in summary_columns[1:]:
         if column not in summary.columns:
@@ -441,6 +453,11 @@ def apply_word_summary_display(
         pd.Series("", index=display_df.index),
     ).fillna("").astype(str)
     display_df["display_error_type"] = ""
+    display_df["lexicon_display"] = display_df.get(
+        "lexicon_status", pd.Series("", index=display_df.index)
+    ).fillna("").astype(str).map(
+        lambda value: "自动推测发音" if value in {"g2p_en", "phonemizer"} else value
+    )
 
     if decision_mode == "deletion_only":
         word_error = display_df["word_error_type"].fillna("").astype(str)
@@ -450,6 +467,9 @@ def apply_word_summary_display(
         possible_missing = display_df["possible_missing_word"].map(_boolish)
         deletion = word_error.eq("deletion")
         possible = word_error.eq("possible_deletion")
+        g2p_issue = word_error.eq("g2p_issue") | display_df.get(
+            "lexicon_status", pd.Series("", index=display_df.index)
+        ).fillna("").astype(str).eq("failed")
         alignment_issue = (
             word_error.eq("alignment_issue")
             | phone_error.eq("alignment_issue")
@@ -480,6 +500,11 @@ def apply_word_summary_display(
         display_df.loc[possible, "display_align"] = "suspect"
         display_df.loc[possible, "display_error_type"] = "possible_deletion"
 
+        display_df.loc[g2p_issue, "display_decision"] = "需复核"
+        display_df.loc[g2p_issue, "display_error"] = "词典缺失"
+        display_df.loc[g2p_issue, "display_align"] = "bad"
+        display_df.loc[g2p_issue, "display_error_type"] = "g2p_issue"
+
     return display_df
 
 
@@ -487,6 +512,8 @@ def deletion_only_display_fields(row: dict[str, object]) -> dict[str, str]:
     if row.get("display_error") or row.get("display_decision") or row.get("display_align"):
         display_error_type = str(row.get("display_error_type", ""))
         display_align = str(row.get("display_align", "")) or str(row.get("alignment_quality", ""))
+        if display_error_type == "g2p_issue":
+            return {"error_display": "词典缺失", "decision_display": "需复核", "align_display": "bad"}
         if display_error_type == "deletion":
             return {"error_display": "漏读", "decision_display": "漏读", "align_display": "suspect"}
         if display_error_type == "possible_deletion":
@@ -501,7 +528,11 @@ def deletion_only_display_fields(row: dict[str, object]) -> dict[str, str]:
     decision = str(row.get("decision", ""))
     error_type = str(row.get("error_type", ""))
     alignment_quality = str(row.get("alignment_quality", ""))
-    if error_type == "alignment_issue" or alignment_quality.lower() in {"bad", "failed", "alignment_failed"}:
+    if error_type == "g2p_issue":
+        error_display = "词典缺失"
+        decision_display = "需复核"
+        alignment_quality = "bad"
+    elif error_type == "alignment_issue" or alignment_quality.lower() in {"bad", "failed", "alignment_failed"}:
         error_display = "对齐失败"
         decision_display = "需复核"
         alignment_quality = "bad"
