@@ -26,6 +26,7 @@ from pronunciation.decision import DecisionConfig, apply_decision_rules, apply_d
 from pronunciation.deletion_detector import build_word_summary, detect_word_deletions
 from pronunciation.g2p import write_g2p_json
 from pronunciation.final_word_decision import merge_word_diagnosis_into_phones, run_word_level_diagnosis
+from pronunciation.mandarin_deletion_fusion import DEFAULT_MODEL_PATH as DEFAULT_MANDARIN_DELETION_MODEL
 from pronunciation.phone_decision import apply_phone_decisions, summarize_phone_decisions
 from pronunciation.text_audio_consistency import (
     check_text_audio_consistency,
@@ -71,6 +72,12 @@ def main() -> None:
     parser.add_argument("--asr-transcript")
     parser.add_argument("--enable-ctc-deletion", action="store_true")
     parser.add_argument("--ctc-deletion-model", default=DEFAULT_CTC_MODEL)
+    parser.add_argument(
+        "--mandarin-deletion-model",
+        type=Path,
+        default=DEFAULT_MANDARIN_DELETION_MODEL,
+        help="Speaker-independent Mandarin-L1 word-deletion fusion model.",
+    )
     parser.add_argument("--text-audio-consistency-output", type=Path)
     parser.add_argument("--preprocessed-audio-output", type=Path)
     parser.add_argument("--no-auto-preprocess", action="store_true")
@@ -169,6 +176,7 @@ def main() -> None:
             word_summary,
             word_asr_consistency,
             ctc_deletion_features,
+            args.mandarin_deletion_model,
         )
         word_summary = _ensure_text_audio_status(
             word_summary,

@@ -104,16 +104,30 @@ def score_audio_word_deletions(
         scores = score_deletion_hypotheses(log_probs, full_labels, spans, blank_id=blank_id)
         greedy_ids = torch.argmax(log_probs, dim=-1)
         transcript = processor.batch_decode(greedy_ids.unsqueeze(0))[0]
+        from pronunciation.text_audio_consistency import compare_target_with_asr
+
+        greedy_consistency = compare_target_with_asr(full_text, transcript, asr_confidence=1.0)
+        greedy_by_index = {
+            int(row["word_index"]): row
+            for _, row in greedy_consistency.iterrows()
+        }
         rows = []
         for (_, word), score in zip(words.iterrows(), scores):
+            word_index = int(word["word_index"])
+            greedy_word = greedy_by_index.get(word_index, {})
             rows.append(
                 {
-                    "word_index": int(word["word_index"]),
+                    "word_index": word_index,
                     "word": str(word["word"]),
                     **score,
                     "ctc_deletion_available": True,
                     "ctc_deletion_model": model_id,
                     "ctc_greedy_transcript": transcript,
+                    "ctc_greedy_word_status": str(greedy_word.get("asr_word_status", "uncertain")),
+                    "ctc_greedy_edit_op": str(greedy_word.get("asr_edit_op", "uncertain")),
+                    "ctc_greedy_missing_word": bool(greedy_word.get("asr_missing_word", False)),
+                    "ctc_greedy_substituted_word": bool(greedy_word.get("asr_substituted_word", False)),
+                    "ctc_greedy_context_support": float(greedy_word.get("asr_context_support", 0.0)),
                     "ctc_deletion_error": "",
                 }
             )
@@ -131,6 +145,11 @@ def score_audio_word_deletions(
                     "ctc_deletion_available": False,
                     "ctc_deletion_model": model_id,
                     "ctc_greedy_transcript": "",
+                    "ctc_greedy_word_status": "not_checked",
+                    "ctc_greedy_edit_op": "not_checked",
+                    "ctc_greedy_missing_word": False,
+                    "ctc_greedy_substituted_word": False,
+                    "ctc_greedy_context_support": 0.0,
                     "ctc_deletion_error": f"{type(error).__name__}: {error}",
                 }
                 for _, row in words.iterrows()
@@ -203,5 +222,10 @@ def _output_columns() -> list[str]:
         "ctc_deletion_available",
         "ctc_deletion_model",
         "ctc_greedy_transcript",
+        "ctc_greedy_word_status",
+        "ctc_greedy_edit_op",
+        "ctc_greedy_missing_word",
+        "ctc_greedy_substituted_word",
+        "ctc_greedy_context_support",
         "ctc_deletion_error",
     ]

@@ -9,6 +9,35 @@ import pandas as pd
 
 
 WORD_RE = re.compile(r"[A-Za-z']+")
+WORD_EXPANSIONS = {
+    "I'M": ("I", "AM"),
+    "YOU'RE": ("YOU", "ARE"),
+    "WE'RE": ("WE", "ARE"),
+    "THEY'RE": ("THEY", "ARE"),
+    "HE'S": ("HE", "IS"),
+    "SHE'S": ("SHE", "IS"),
+    "IT'S": ("IT", "IS"),
+    "DON'T": ("DO", "NOT"),
+    "DOESN'T": ("DOES", "NOT"),
+    "DIDN'T": ("DID", "NOT"),
+    "CAN'T": ("CAN", "NOT"),
+    "WON'T": ("WILL", "NOT"),
+    "ISN'T": ("IS", "NOT"),
+    "AREN'T": ("ARE", "NOT"),
+    "WASN'T": ("WAS", "NOT"),
+    "WEREN'T": ("WERE", "NOT"),
+    "I'VE": ("I", "HAVE"),
+    "YOU'VE": ("YOU", "HAVE"),
+    "WE'VE": ("WE", "HAVE"),
+    "THEY'VE": ("THEY", "HAVE"),
+    "I'LL": ("I", "WILL"),
+    "YOU'LL": ("YOU", "WILL"),
+    "WE'LL": ("WE", "WILL"),
+    "THEY'LL": ("THEY", "WILL"),
+    "GONNA": ("GOING", "TO"),
+    "WANNA": ("WANT", "TO"),
+    "GOTTA": ("GOT", "TO"),
+}
 
 
 def normalize_text(text: str) -> list[str]:
@@ -21,16 +50,34 @@ def compare_target_with_asr(
     *,
     asr_confidence: float = 1.0,
 ) -> pd.DataFrame:
-    """Align every target word with an ASR transcript using word edit distance."""
+    """Align target words after expanding common spoken-English equivalents."""
     target = normalize_text(target_text)
     recognized = normalize_text(asr_transcript)
-    operations = _align_operations(target, recognized)
-    rows: list[dict[str, Any]] = []
+    target_units, target_unit_to_word = _expand_words(target)
+    recognized_units, _ = _expand_words(recognized)
+    operations = _align_operations(target_units, recognized_units)
+    word_operations: dict[int, list[str]] = {index: [] for index in range(len(target))}
+    word_recognized: dict[int, list[str]] = {index: [] for index in range(len(target))}
     insertions: list[tuple[int, str]] = []
-    for target_word, asr_word, word_index, operation in operations:
+    for _target_unit, asr_unit, unit_index, operation in operations:
         if operation == "insert":
-            insertions.append((word_index, asr_word))
+            insertions.append((_insertion_word_index(unit_index, target_unit_to_word), asr_unit))
             continue
+        word_index = target_unit_to_word[unit_index]
+        word_operations[word_index].append(operation)
+        if asr_unit:
+            word_recognized[word_index].append(asr_unit)
+
+    rows: list[dict[str, Any]] = []
+    for word_index, target_word in enumerate(target):
+        unit_operations = word_operations[word_index]
+        if unit_operations and all(operation == "equal" for operation in unit_operations):
+            operation = "equal"
+        elif unit_operations and all(operation == "delete" for operation in unit_operations):
+            operation = "delete"
+        else:
+            operation = "replace"
+        asr_word = " ".join(word_recognized[word_index])
         status = {"equal": "matched", "delete": "missing", "replace": "substituted"}[operation]
         mismatch_type = {"equal": "none", "delete": "missing_word", "replace": "substituted_word"}[operation]
         mismatch_score = {"equal": 0.0, "delete": 0.95, "replace": 0.85}[operation]
@@ -77,6 +124,22 @@ def compare_target_with_asr(
         mismatch = frame["text_audio_mismatch"].astype(bool)
         frame.loc[mismatch, "text_audio_mismatch_type"] = "severe_mismatch"
     return _add_context_evidence(frame)
+
+
+def _expand_words(words: list[str]) -> tuple[list[str], list[int]]:
+    units: list[str] = []
+    unit_to_word: list[int] = []
+    for word_index, word in enumerate(words):
+        expansion = WORD_EXPANSIONS.get(word, (word,))
+        units.extend(expansion)
+        unit_to_word.extend([word_index] * len(expansion))
+    return units, unit_to_word
+
+
+def _insertion_word_index(unit_index: int, unit_to_word: list[int]) -> int:
+    if not unit_to_word or unit_index <= 0:
+        return 0
+    return unit_to_word[min(unit_index - 1, len(unit_to_word) - 1)]
 
 
 def check_text_audio_consistency(

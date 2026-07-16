@@ -13,6 +13,7 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 from pronunciation.ctc_word_deletion import score_audio_word_deletions
+from pronunciation.mandarin_deletion_fusion import DEFAULT_MODEL_PATH
 from pronunciation.text_audio_consistency import check_text_audio_consistency
 from pronunciation.word_deletion_model import word_deletion_detector
 
@@ -22,6 +23,7 @@ def main() -> None:
     parser.add_argument("--phones", type=Path, required=True)
     parser.add_argument("--audio-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "outputs/mandarin_deletion_validation")
+    parser.add_argument("--mandarin-deletion-model", type=Path, default=DEFAULT_MODEL_PATH)
     args = parser.parse_args()
 
     phones = pd.read_csv(args.phones)
@@ -57,7 +59,14 @@ def main() -> None:
             target_text=text,
             asr_model="faster_whisper",
         )
-        diagnosed = word_deletion_detector(word_summary, consistency, ctc)
+        baseline = word_deletion_detector(word_summary, consistency, ctc)
+        diagnosed = word_deletion_detector(
+            word_summary,
+            consistency,
+            ctc,
+            mandarin_fusion_model=args.mandarin_deletion_model,
+        )
+        diagnosed["baseline_deletion_decision"] = baseline["deletion_decision"].to_numpy()
         diagnosed["utterance_id"] = utterance_id
         diagnosed["audio_path"] = str(audio_path)
         diagnosed["asr_transcript"] = str(meta.get("asr_transcript", ""))
@@ -73,6 +82,11 @@ def main() -> None:
         "gold_deletion_count": int(result.get("gold_deletion", pd.Series(dtype=bool)).sum()),
         "confirmed_deletion": _metrics(result, {"deletion"}),
         "confirmed_or_possible_deletion": _metrics(result, {"deletion", "possible_deletion"}),
+        "baseline_confirmed_deletion": _metrics(
+            result,
+            {"deletion"},
+            decision_column="baseline_deletion_decision",
+        ),
         "limitations": "This is a small diagnostic subset, not a corpus-wide benchmark.",
     }
     (args.output_dir / "report.json").write_text(
@@ -82,10 +96,15 @@ def main() -> None:
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
-def _metrics(frame: pd.DataFrame, positive_decisions: set[str]) -> dict[str, float | int]:
+def _metrics(
+    frame: pd.DataFrame,
+    positive_decisions: set[str],
+    *,
+    decision_column: str = "deletion_decision",
+) -> dict[str, float | int]:
     if frame.empty:
         return {"tp": 0, "fp": 0, "fn": 0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
-    predicted = frame["deletion_decision"].isin(positive_decisions)
+    predicted = frame[decision_column].isin(positive_decisions)
     gold = frame["gold_deletion"].astype(bool)
     tp = int((predicted & gold).sum())
     fp = int((predicted & ~gold).sum())

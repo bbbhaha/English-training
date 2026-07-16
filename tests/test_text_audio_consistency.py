@@ -97,6 +97,36 @@ class TextAudioConsistencyTests(unittest.TestCase):
         self.assertNotEqual(america_summary["error_type"], "deletion")
         self.assertNotEqual(america_summary["word_decision"], "true_error")
 
+    def test_contraction_expansion_exposes_preceding_word_deletion(self):
+        result = compare_target_with_asr(
+            "WHAT YOU'RE GONNA GET",
+            "YOU ARE GOING TO GET",
+        )
+        what = result[result["word"].eq("WHAT")].iloc[0]
+        youre = result[result["word"].eq("YOU'RE")].iloc[0]
+        gonna = result[result["word"].eq("GONNA")].iloc[0]
+        self.assertTrue(bool(what["asr_missing_word"]))
+        self.assertEqual("equal", youre["asr_edit_op"])
+        self.assertEqual("equal", gonna["asr_edit_op"])
+
+    def test_colloquial_expansion_exposes_final_get_deletion(self):
+        result = compare_target_with_asr(
+            "YOU'RE GONNA GET",
+            "YOU ARE GOING TO",
+        )
+        get = result[result["word"].eq("GET")].iloc[0]
+        self.assertTrue(bool(get["asr_missing_word"]))
+
+    def test_missing_gonna_is_not_hidden_by_substituted_get(self):
+        result = compare_target_with_asr(
+            "YOU'RE GONNA GET",
+            "YOU ARE THAT",
+        )
+        gonna = result[result["word"].eq("GONNA")].iloc[0]
+        get = result[result["word"].eq("GET")].iloc[0]
+        self.assertTrue(bool(gonna["asr_missing_word"]))
+        self.assertTrue(bool(get["asr_substituted_word"]))
+
 
 if __name__ == "__main__":
     unittest.main()

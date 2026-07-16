@@ -393,3 +393,31 @@ alignment_quality == bad -> decision = uncertain_review
 
 It does not convert a failed alignment into a high-confidence pronunciation
 error.
+
+### Mandarin-L1 deletion fusion model
+
+The default backend loads `models/mandarin_deletion_fusion_v2.joblib`. The
+model combines Whisper word edits, alignment-free CTC full-vs-deleted logit
+margins, an independent CTC greedy transcript, and lexical context. It is
+trained with speaker-isolated Mandarin L2-ARCTIC splits and controlled
+whole-word deletion augmentation.
+
+```powershell
+python scripts/train_mandarin_deletion_fusion.py `
+  --phones C:/path/to/data/processed/l2_arctic/phones.csv `
+  --source-project-root C:/path/to/project `
+  --output-dir outputs/mandarin_deletion_training_v1 `
+  --model-output models/mandarin_deletion_fusion_v1.joblib
+```
+
+See `docs/mandarin_l1_word_deletion_strategy.md` for the literature basis,
+speaker split, metrics, limitations, and the separate real-deletion check.
+
+Evaluate the paired real recordings listed in the local manifest:
+
+```powershell
+python scripts/evaluate_manual_deletion_pairs.py `
+  --manifest data/manual_deletion_pairs/manifest.csv `
+  --model models/mandarin_deletion_fusion_v2.joblib `
+  --output-dir outputs/manual_deletion_pairs/final_v2
+```

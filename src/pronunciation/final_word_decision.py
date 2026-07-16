@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 from pronunciation.ctc_gop import aggregate_word_ctc_gop
@@ -12,13 +14,19 @@ def run_word_level_diagnosis(
     word_summary: pd.DataFrame,
     asr_consistency: pd.DataFrame | None = None,
     ctc_deletion_features: pd.DataFrame | None = None,
+    mandarin_deletion_model: str | Path | None = None,
 ) -> pd.DataFrame:
     ctc_features = aggregate_word_ctc_gop(phone_frame)
     if ctc_deletion_features is not None and not ctc_deletion_features.empty:
         ctc_features = _merge_features(ctc_features, ctc_deletion_features)
     base = _merge_features(word_summary, ctc_features)
     base = _merge_features(base, _aggregate_phone_debug(phone_frame))
-    deletion = word_deletion_detector(base, asr_consistency, ctc_features)
+    deletion = word_deletion_detector(
+        base,
+        asr_consistency,
+        ctc_features,
+        mandarin_fusion_model=mandarin_deletion_model,
+    )
     mispronunciation = word_mispronunciation_detector(deletion)
     return fuse_word_decisions(mispronunciation)
 
@@ -131,6 +139,17 @@ def merge_word_diagnosis_into_phones(phone_frame: pd.DataFrame, word_frame: pd.D
         "ctc_deletion_available",
         "ctc_deletion_model",
         "ctc_greedy_transcript",
+        "ctc_greedy_word_status",
+        "ctc_greedy_edit_op",
+        "ctc_greedy_missing_word",
+        "ctc_greedy_substituted_word",
+        "ctc_greedy_context_support",
+        "mandarin_deletion_model_available",
+        "mandarin_deletion_probability",
+        "mandarin_deletion_model",
+        "mandarin_deletion_threshold",
+        "mandarin_possible_deletion_threshold",
+        "mandarin_deletion_model_error",
         "mispronunciation_score",
         "mispronunciation_decision",
         "final_word_decision",

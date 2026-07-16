@@ -45,6 +45,7 @@ from predict_pronunciation import (  # noqa: E402
 from pronunciation.phone_decision import apply_phone_decisions, summarize_phone_decisions  # noqa: E402
 from pronunciation.ctc_word_deletion import score_audio_word_deletions  # noqa: E402
 from pronunciation.final_word_decision import run_word_level_diagnosis  # noqa: E402
+from pronunciation.mandarin_deletion_fusion import DEFAULT_MODEL_PATH as DEFAULT_MANDARIN_DELETION_MODEL  # noqa: E402
 from pronunciation.target_words import build_target_word_table, ensure_word_summary_coverage  # noqa: E402
 from pronunciation.text_audio_consistency import check_text_audio_consistency  # noqa: E402
 
@@ -172,6 +173,7 @@ def diagnose(
         enable_asr_consistency_check=True,
         asr_transcript=None,
         asr_model="auto",
+        mandarin_deletion_model=DEFAULT_MANDARIN_DELETION_MODEL,
     )
 
     target_word_table = build_target_word_table(text, utterance_id=utterance_id)
@@ -211,6 +213,7 @@ def diagnose(
         word_summary,
         consistency,
         ctc_deletion_features,
+        args.mandarin_deletion_model,
     )
     word_summary["asr_transcript"] = str(consistency_meta.get("asr_transcript", ""))
     word_summary["asr_available"] = bool(consistency_meta.get("asr_available", False))

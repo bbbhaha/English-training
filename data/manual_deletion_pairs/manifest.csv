@@ -1,0 +1,13 @@
+utterance_id,audio,text,deleted_word,deleted_word_index,expected_label,split,notes
+manual_life,data/manual_deletion_pairs/audio/life.wav,"Life was like a box of chocolates. You never know what you're gonna get.",LIFE,0,deletion,train,filename identifies omitted word
+manual_was,data/manual_deletion_pairs/audio/was.wav,"Life was like a box of chocolates. You never know what you're gonna get.",WAS,1,deletion,test,filename identifies omitted word
+manual_like,data/manual_deletion_pairs/audio/like.wav,"Life was like a box of chocolates. You never know what you're gonna get.",LIKE,2,deletion,train,filename identifies omitted word
+manual_box,data/manual_deletion_pairs/audio/Box.wav,"Life was like a box of chocolates. You never know what you're gonna get.",BOX,4,deletion,test,filename identifies omitted word
+manual_chocolates,data/manual_deletion_pairs/audio/Chocolate.wav,"Life was like a box of chocolates. You never know what you're gonna get.",CHOCOLATES,6,deletion,train,filename uses singular Chocolate for target CHOCOLATES
+manual_you,data/manual_deletion_pairs/audio/you.wav,"Life was like a box of chocolates. You never know what you're gonna get.",YOU,7,deletion,test,filename identifies sentence-initial YOU
+manual_never,data/manual_deletion_pairs/audio/never.wav,"Life was like a box of chocolates. You never know what you're gonna get.",NEVER,8,deletion,train,filename identifies omitted word
+manual_what,data/manual_deletion_pairs/audio/what.wav,"Life was like a box of chocolates. You never know what you're gonna get.",WHAT,10,deletion,test,filename identifies omitted word
+manual_you_are,data/manual_deletion_pairs/audio/you are.wav,"Life was like a box of chocolates. You never know what you're gonna get.",YOU'RE,11,deletion,train,filename you are maps to target contraction YOU'RE
+manual_gonna,data/manual_deletion_pairs/audio/going.wav,"Life was like a box of chocolates. You never know what you're gonna get.",GONNA,12,deletion,test,filename going maps to target colloquial GONNA
+manual_get,data/manual_deletion_pairs/audio/get.wav,"Life was like a box of chocolates. You never know what you're gonna get.",GET,13,deletion,train,filename identifies omitted word
+manual_correct,data/manual_deletion_pairs/audio/correct.wav,"Life was like a box of chocolates. You never know what you're gonna get.",,-1,correct,test,complete reading

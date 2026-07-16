@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
+
+from pronunciation.mandarin_deletion_fusion import FUNCTION_WORDS, add_mandarin_deletion_fusion_scores
 
 
 BAD_ALIGNMENT = {"bad", "failed", "alignment_failed"}
@@ -10,6 +14,7 @@ def word_deletion_detector(
     word_summary: pd.DataFrame,
     asr_consistency: pd.DataFrame | None = None,
     ctc_features: pd.DataFrame | None = None,
+    mandarin_fusion_model: str | Path | None = None,
 ) -> pd.DataFrame:
     out = word_summary.copy()
     out = _merge(out, asr_consistency, _asr_columns())
@@ -34,6 +39,8 @@ def word_deletion_detector(
         if column not in out.columns:
             out[column] = default
 
+    out = add_mandarin_deletion_fusion_scores(out, mandarin_fusion_model)
+
     decisions: list[str] = []
     scores: list[float] = []
     evidence: list[str] = []
@@ -50,6 +57,7 @@ def word_deletion_detector(
         blank_ratio = _number(row.get("ctc_blank_ratio"), float("nan"))
         ctc_score = _number(row.get("ctc_deletion_score"), float("nan"))
         ctc_available = _truthy(row.get("ctc_deletion_available")) and pd.notna(ctc_score)
+        ctc_greedy_missing = _truthy(row.get("ctc_greedy_missing_word"))
         asr_confidence = _number(row.get("asr_confidence"), 0.0)
         context_support = _number(row.get("asr_context_support"), 0.0)
         missing_confidence = _number(
@@ -62,9 +70,44 @@ def word_deletion_detector(
             row_evidence.append(f"ctc_blank_ratio={blank_ratio:.3f}")
         if ctc_available:
             row_evidence.append(f"ctc_deletion_score={ctc_score:.3f}")
+        fusion_available = _truthy(row.get("mandarin_deletion_model_available"))
+        fusion_probability = _number(row.get("mandarin_deletion_probability"), float("nan"))
+        fusion_deletion_threshold = _number(row.get("mandarin_deletion_threshold"), 0.80)
+        fusion_possible_threshold = _number(row.get("mandarin_possible_deletion_threshold"), 0.45)
+        word = str(row.get("word", "")).strip().upper()
+        ambiguous_short_function_word = (
+            count <= 1
+            and word in FUNCTION_WORDS
+            and not ctc_greedy_missing
+            and (not ctc_available or ctc_score < 0.95)
+        )
+        if fusion_available and pd.notna(fusion_probability):
+            row_evidence.append(f"mandarin_fusion_probability={fusion_probability:.3f}")
         if lexicon_status == "failed":
             decision, score = "not_judged", 0.0
             row_evidence.append("g2p_failed")
+        elif (
+            fusion_available
+            and fusion_probability >= fusion_deletion_threshold
+            and ctc_available
+            and (missing or ctc_greedy_missing)
+            and not ambiguous_short_function_word
+        ):
+            decision, score = "deletion", fusion_probability
+            row_evidence.append("mandarin_l1_fusion_confirmed_deletion")
+        elif fusion_available and fusion_probability >= fusion_possible_threshold:
+            decision, score = "possible_deletion", fusion_probability
+            row_evidence.append(
+                "short_function_word_requires_recognizer_agreement"
+                if ambiguous_short_function_word
+                else "mandarin_l1_fusion_possible_deletion"
+            )
+        elif fusion_available and alignment in BAD_ALIGNMENT:
+            decision, score = "alignment_issue", 0.0
+            row_evidence.append("bad_alignment")
+        elif fusion_available:
+            decision, score = "correct", max(0.0, fusion_probability)
+            row_evidence.append("mandarin_l1_fusion_rejected_deletion")
         elif missing and ctc_available and ctc_score >= 0.85:
             decision, score = "deletion", max(0.85, missing_confidence, ctc_score)
             row_evidence.append("asr_and_strong_alignment_free_ctc_agree")
@@ -145,6 +188,11 @@ def _ctc_columns() -> list[str]:
         "ctc_deletion_available",
         "ctc_deletion_model",
         "ctc_greedy_transcript",
+        "ctc_greedy_word_status",
+        "ctc_greedy_edit_op",
+        "ctc_greedy_missing_word",
+        "ctc_greedy_substituted_word",
+        "ctc_greedy_context_support",
         "ctc_deletion_error",
     ]
 
