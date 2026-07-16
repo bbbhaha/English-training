@@ -11,8 +11,11 @@ def run_word_level_diagnosis(
     phone_frame: pd.DataFrame,
     word_summary: pd.DataFrame,
     asr_consistency: pd.DataFrame | None = None,
+    ctc_deletion_features: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     ctc_features = aggregate_word_ctc_gop(phone_frame)
+    if ctc_deletion_features is not None and not ctc_deletion_features.empty:
+        ctc_features = _merge_features(ctc_features, ctc_deletion_features)
     base = _merge_features(word_summary, ctc_features)
     base = _merge_features(base, _aggregate_phone_debug(phone_frame))
     deletion = word_deletion_detector(base, asr_consistency, ctc_features)
@@ -30,34 +33,77 @@ def fuse_word_decisions(frame: pd.DataFrame) -> pd.DataFrame:
     }.items():
         if column not in out.columns:
             out[column] = default
-    final_decisions, error_types, evidence = [], [], []
-    for _, row in out.iterrows():
-        deletion = str(row.get("deletion_decision", "correct"))
-        mispronunciation = str(row.get("mispronunciation_decision", "correct"))
-        lexicon_status = str(row.get("lexicon_status", "")).strip().lower()
-        if lexicon_status == "failed":
-            final = "g2p_issue"
-        elif deletion == "deletion":
-            final = "deletion"
-        elif deletion == "possible_deletion":
-            final = "possible_deletion"
-        elif deletion == "alignment_issue":
-            final = "alignment_issue"
-        elif mispronunciation == "mispronounced":
-            final = "mispronounced"
-        elif mispronunciation == "acceptable_accent":
-            final = "acceptable_accent"
-        elif mispronunciation == "uncertain_review":
-            final = "uncertain_review"
-        else:
-            final = "correct"
-        final_decisions.append(final)
-        error_types.append("" if final == "correct" else final)
-        evidence.append(_join_evidence(row.get("deletion_evidence", ""), row.get("mispronunciation_evidence", "")))
-    out["final_word_decision"] = final_decisions
-    out["final_error_type"] = error_types
-    out["evidence_summary"] = evidence
+    results = [compute_final_word_decision(row) for _, row in out.iterrows()]
+    for column in [
+        "final_word_decision",
+        "final_decision",
+        "final_error_type",
+        "final_error_probability",
+        "final_error_percent",
+        "alignment_issue_score",
+        "evidence_summary",
+    ]:
+        out[column] = [result[column] for result in results]
     return out
+
+
+def compute_final_word_decision(row: pd.Series | dict[str, object]) -> dict[str, object]:
+    """Fuse independent evidence into one conservative word-level result."""
+    get = row.get
+    asr_missing = _truthy(get("asr_missing_word", False))
+    asr_substituted = _truthy(get("asr_substituted_word", False))
+    mismatch_score = _probability(get("text_audio_mismatch_score", 0.0))
+    deletion = str(get("deletion_decision", "correct")).strip().lower()
+    mispronunciation = str(get("mispronunciation_decision", "correct")).strip().lower()
+    alignment = str(get("alignment_quality", "")).strip().lower()
+    lexicon_status = str(get("lexicon_status", "")).strip().lower()
+    deletion_score = _probability(get("deletion_score", 0.0))
+    mispronunciation_score = _probability(get("mispronunciation_score", 0.0))
+    base_evidence = _join_evidence(get("deletion_evidence", ""), get("mispronunciation_evidence", ""))
+
+    final_decision = ""
+    has_explicit_deletion_model_result = "deletion_decision" in row
+    if lexicon_status == "failed":
+        final, final_decision, error_type, probability = "g2p_issue", "uncertain_review", "g2p_issue", 0.0
+        evidence = _join_evidence("G2P failed; the word is not supported yet", base_evidence)
+    elif asr_missing and not has_explicit_deletion_model_result:
+        final, error_type, probability = "deletion", "deletion", max(mismatch_score, 0.90)
+        evidence = _join_evidence("legacy ASR-only deletion input", base_evidence)
+    elif deletion == "deletion":
+        final, error_type, probability = "deletion", "deletion", max(deletion_score, 0.85)
+        evidence = _join_evidence("independent word deletion evidence agrees", base_evidence)
+    elif deletion == "possible_deletion" or asr_missing:
+        final, error_type, probability = "possible_deletion", "possible_deletion", max(deletion_score, 0.60)
+        evidence = _join_evidence("word deletion needs independent confirmation", base_evidence)
+    elif asr_substituted:
+        final, error_type, probability = "substituted_word", "text_audio_mismatch", max(mismatch_score, 0.80)
+        evidence = _join_evidence("target word replaced in ASR transcript", base_evidence)
+    elif deletion == "alignment_issue" or alignment in {"bad", "failed", "alignment_failed"}:
+        final, final_decision, error_type, probability = "alignment_issue", "uncertain_review", "alignment_issue", 0.50
+        evidence = _join_evidence("alignment quality is bad; manual review required", base_evidence)
+    elif mispronunciation == "mispronounced":
+        final, error_type, probability = "mispronounced", "mispronounced", max(mispronunciation_score, 0.80)
+        evidence = base_evidence
+    elif mispronunciation == "acceptable_accent":
+        final, error_type, probability = "acceptable_accent", "acceptable_accent", mispronunciation_score
+        evidence = base_evidence
+    elif mispronunciation == "uncertain_review":
+        final, error_type, probability = "uncertain_review", "mispronunciation_uncertain", max(mispronunciation_score, 0.50)
+        evidence = base_evidence
+    else:
+        final, error_type, probability = "correct", "", 0.0
+        evidence = _join_evidence("no deletion, text mismatch, or alignment issue detected", base_evidence)
+
+    probability = round(min(max(float(probability), 0.0), 1.0), 4)
+    return {
+        "final_word_decision": final,
+        "final_decision": final_decision or final,
+        "final_error_type": error_type,
+        "final_error_probability": probability,
+        "final_error_percent": int(round(probability * 100)),
+        "alignment_issue_score": 0.50 if error_type == "alignment_issue" else 0.0,
+        "evidence_summary": evidence,
+    }
 
 
 def merge_word_diagnosis_into_phones(phone_frame: pd.DataFrame, word_frame: pd.DataFrame) -> pd.DataFrame:
@@ -68,12 +114,31 @@ def merge_word_diagnosis_into_phones(phone_frame: pd.DataFrame, word_frame: pd.D
         "asr_word_status",
         "asr_edit_op",
         "asr_missing_word",
+        "asr_substituted_word",
+        "asr_word",
+        "asr_available",
+        "asr_transcript",
+        "text_audio_consistency_status",
+        "text_audio_mismatch",
+        "text_audio_mismatch_type",
+        "text_audio_mismatch_score",
+        "asr_context_support",
+        "asr_missing_confidence",
         "deletion_score",
         "deletion_decision",
+        "ctc_deletion_score",
+        "ctc_deletion_margin",
+        "ctc_deletion_available",
+        "ctc_deletion_model",
+        "ctc_greedy_transcript",
         "mispronunciation_score",
         "mispronunciation_decision",
         "final_word_decision",
+        "final_decision",
         "final_error_type",
+        "final_error_probability",
+        "final_error_percent",
+        "alignment_issue_score",
         "mandarin_confusion_type",
         "mandarin_confusion_severity",
         "evidence_summary",
@@ -91,6 +156,7 @@ def merge_word_diagnosis_into_phones(phone_frame: pd.DataFrame, word_frame: pd.D
         "uncertain_review": ("uncertain_review", "mispronunciation_uncertain", "insufficient_word_mispronunciation_evidence"),
         "correct": ("correct", "", ""),
         "g2p_issue": ("uncertain_review", "g2p_issue", "g2p_failed"),
+        "substituted_word": ("true_error", "text_audio_mismatch", "word_replaced_in_asr_transcript"),
     }
     for label, (decision, error_type, reason) in mapping.items():
         mask = final.eq(label)
@@ -159,3 +225,16 @@ def _join_evidence(*values: object) -> str:
             if item and item not in parts:
                 parts.append(item)
     return ";".join(parts)
+
+
+def _truthy(value: object) -> bool:
+    return value is True or str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _probability(value: object) -> float:
+    try:
+        if pd.isna(value):
+            return 0.0
+        return min(max(float(value), 0.0), 1.0)
+    except (TypeError, ValueError):
+        return 0.0

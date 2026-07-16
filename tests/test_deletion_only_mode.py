@@ -130,9 +130,9 @@ class DeletionOnlyModeTests(unittest.TestCase):
         out = _final_output(frame, args)
         self.assertEqual(out.loc[0, "decision"], "correct")
 
-    def test_webapp_default_uses_deletion_only(self):
+    def test_webapp_keeps_deletion_only_optional_but_defaults_to_phone_diagnosis(self):
         text = (ROOT / "webapp" / "app.py").read_text(encoding="utf-8")
-        self.assertIn('decision_mode="deletion_only"', text)
+        self.assertIn('decision_mode="phone_diagnosis"', text)
         self.assertNotIn('decision_mode="hardset"', text)
 
     def test_high_error_ratio_is_debug_only_not_missing_word(self):

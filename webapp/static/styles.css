@@ -6,10 +6,16 @@
   --line: #dce4ec;
   --accent: #126b8f;
   --accent-dark: #0f4d66;
-  --correct: #16703a;
+  --correct: #166534;
+  --correct-bg: #dcfce7;
+  --correct-border: #86efac;
   --accent-ok: #7a5b00;
-  --error: #b42318;
-  --review: #6d5bd0;
+  --error: #b91c1c;
+  --error-bg: #fee2e2;
+  --error-border: #fca5a5;
+  --review: #92400e;
+  --review-bg: #fef3c7;
+  --review-border: #fcd34d;
   --surface: #f9fbfc;
   --shadow: 0 16px 38px rgba(23, 36, 50, 0.12);
 }
@@ -250,10 +256,11 @@ audio {
   font-weight: 800;
 }
 
-.correct {
-  background: #edf8f0;
+.phone-pill.correct,
+.badge.correct {
+  background: var(--correct-bg);
   color: var(--correct);
-  border-color: #b8e4c4;
+  border-color: var(--correct-border);
 }
 
 .accent {
@@ -262,16 +269,36 @@ audio {
   border-color: #f5dda2;
 }
 
-.error {
-  background: #fff1f0;
+.phone-pill.error,
+.badge.error {
+  background: var(--error-bg);
   color: var(--error);
-  border-color: #fecaca;
+  border-color: var(--error-border);
 }
 
-.review {
-  background: #f1efff;
+.phone-pill.review,
+.badge.review {
+  background: var(--review-bg);
   color: var(--review);
-  border-color: #d8d1ff;
+  border-color: var(--review-border);
+}
+
+.phone-pill.correct,
+.phone-pill.error,
+.phone-pill.review {
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.phone-row.correct td:first-child {
+  box-shadow: inset 4px 0 0 var(--correct);
+}
+
+.phone-row.error td:first-child {
+  box-shadow: inset 4px 0 0 var(--error);
+}
+
+.phone-row.review td:first-child {
+  box-shadow: inset 4px 0 0 var(--review);
 }
 
 .artifact-row {
@@ -337,16 +364,23 @@ tr:last-child td {
   font-size: 12px;
 }
 
+/* Decision column: keep the successful state unmistakably green. */
+.badge.correct {
+  color: #15803d;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
 .quality.pass {
   color: var(--correct);
-  background: #edf8f0;
-  border-color: #b8e4c4;
+  background: var(--correct-bg);
+  border-color: var(--correct-border);
 }
 
 .quality.bad {
   color: var(--error);
-  background: #fff1f0;
-  border-color: #fecaca;
+  background: var(--error-bg);
+  border-color: var(--error-border);
 }
 
 .reason {

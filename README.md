@@ -250,6 +250,29 @@ SpeechOcean762 应优先保留官方 train/test，说话人级验证集从官方
 train/dev/test。该划分适合管线验证和跨说话人测试，不应被当作稳定的模型效果估计。
 ## End-to-end pronunciation prediction
 
+### Mandarin-L1 word-deletion evidence
+
+真实音频的漏读判断使用三路独立证据：无提示英语 ASR 的词级编辑对齐、alignment-free
+Wav2Vec2 CTC 的“完整句/删词句”似然比较，以及强制对齐时长与边界。单独一路异常只进入
+`possible_deletion`，ASR 与 CTC 或极端时长证据一致时才确认 `deletion`。首次使用先准备模型：
+
+```powershell
+python scripts\download_deletion_models.py
+```
+
+中文母语 L2-ARCTIC 漏读子集的可复现诊断评估：
+
+```powershell
+python scripts\evaluate_mandarin_l2_arctic_deletions.py `
+  --phones data\processed\l2_arctic\phones.csv `
+  --audio-root . `
+  --output-dir outputs\mandarin_deletion_validation
+```
+
+如果词典和 G2P 都无法提供可靠目标发音，后端输出 `g2p_issue`，网页显示“单词暂未收录”，
+不会把该词误报为普通发音错误。研究依据与局部验证范围见
+`docs/mandarin_l1_word_deletion_strategy.md`。
+
 This workflow is for real `wav + target text` pronunciation diagnosis. It is
 reported separately from public dataset `gold_binary` evaluation.
 

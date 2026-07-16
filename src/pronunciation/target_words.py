@@ -66,7 +66,11 @@ def ensure_word_summary_coverage(
     }
     for column, default in defaults.items():
         if column not in out.columns:
-            out[column] = default
+            if column == "missing_word_reason":
+                out[column] = ""
+                out.loc[missing, column] = default
+            else:
+                out[column] = default
         elif column in {"phone_count", "num_phone_true_error", "num_phone_uncertain"}:
             out[column] = pd.to_numeric(out[column], errors="coerce").fillna(default).astype(int)
         elif column == "possible_missing_word":

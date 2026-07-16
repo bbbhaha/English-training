@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>端到端音素发音诊断</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=PHONE_DIAGNOSIS_V8" />
   </head>
   <body>
     <main class="app-shell">
@@ -82,20 +82,18 @@
               <tr>
                 <th>Word</th>
                 <th>Phone</th>
-                <th>Decision</th>
+                <th>Start ms</th>
+                <th>End ms</th>
                 <th>Error</th>
-                <th>Align</th>
+                <th>Decision</th>
                 <th>Error Type</th>
-                <th>Trigger</th>
-                <th>Reason</th>
-                <th>Lexicon</th>
-                <th>G2P Source</th>
-                <th>G2P Confidence</th>
+                <th>Align</th>
+                <th>Evidence</th>
               </tr>
             </thead>
             <tbody id="resultBody">
               <tr>
-                <td colspan="11" class="empty">等待录音或上传音频</td>
+                <td colspan="9" class="empty">等待录音或上传音频</td>
               </tr>
             </tbody>
           </table>
@@ -105,6 +103,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=DELETION_ONLY_WORD_SUMMARY_DISPLAY_V5"></script>
+    <script src="/static/app.js?v=PHONE_DIAGNOSIS_V8"></script>
   </body>
 </html>

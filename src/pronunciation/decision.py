@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from pronunciation.phone_decision import apply_phone_decisions
+
 
 GOOD_ALIGNMENT_VALUES = {"good", "pass", "ok"}
 BAD_ALIGNMENT_VALUES = {"bad", "failed", "alignment_failed"}
@@ -30,10 +32,12 @@ def is_good_alignment(value: object) -> bool:
 
 def apply_decision_rules(frame: pd.DataFrame, config: DecisionConfig | None = None) -> pd.DataFrame:
     config = config or DecisionConfig()
-    if config.mode not in {"conservative", "hardset", "deletion_only"}:
+    if config.mode not in {"phone_diagnosis", "conservative", "hardset", "deletion_only"}:
         raise ValueError(f"Unsupported decision mode: {config.mode}")
     out = frame.copy()
     _ensure_score_columns(out)
+    if config.mode == "phone_diagnosis":
+        return apply_phone_decisions(out)
     if config.mode == "deletion_only":
         return _apply_deletion_only(out, config)
     good_alignment = out["alignment_quality"].map(is_good_alignment)

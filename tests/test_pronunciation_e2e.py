@@ -107,8 +107,11 @@ class PronunciationE2ETests(unittest.TestCase):
         self.assertTrue((rows["decision"] == "uncertain_review").all())
         self.assertTrue((rows["error_type"] == "alignment_issue").all())
         self.assertTrue((rows["confidence"].astype(float) == 0.0).all())
-        self.assertTrue((rows["manual_calibrated_error_probability"].astype(float) == 0.0).all())
-        self.assertTrue((rows["review_reason"] == "bad_alignment").all())
+        self.assertTrue((rows["phone_error_probability"].astype(float) >= 0.5).all())
+        self.assertTrue((rows["phone_error_percent"].astype(float) >= 50.0).all())
+        self.assertTrue((rows["phone_decision"] == "uncertain_review").all())
+        self.assertTrue((rows["phone_error_type"] == "alignment_issue").all())
+        self.assertTrue(rows["review_reason"].str.contains("Alignment failed", regex=False).all())
 
 def _write_test_wav(path: Path, rate: int = 16000, duration_sec: float = 1.0) -> None:
     samples = np.arange(int(rate * duration_sec), dtype=np.float32)

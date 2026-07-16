@@ -19,13 +19,14 @@ sys.path.insert(0, str(ROOT / "src"))
 from phoneme_assessment.phones import phone_group
 from phase15_verification.analysis import add_evidence_columns
 from pronunciation.alignment import align_audio_to_text, save_alignment_csv
-from pronunciation.asr_consistency import compare_target_with_asr
 from pronunciation.audio_preprocess import inspect_audio, preprocess_audio
 from pronunciation.calibration import apply_manual_calibrator
+from pronunciation.ctc_word_deletion import DEFAULT_CTC_MODEL, score_audio_word_deletions
 from pronunciation.decision import DecisionConfig, apply_decision_rules, apply_deletion_only_override, is_good_alignment
 from pronunciation.deletion_detector import build_word_summary, detect_word_deletions
 from pronunciation.g2p import write_g2p_json
 from pronunciation.final_word_decision import merge_word_diagnosis_into_phones, run_word_level_diagnosis
+from pronunciation.phone_decision import apply_phone_decisions, summarize_phone_decisions
 from pronunciation.text_audio_consistency import (
     check_text_audio_consistency,
     consistency_to_json_payload,
@@ -58,10 +59,18 @@ def main() -> None:
     parser.add_argument("--manual-calibrator", type=Path, default=ROOT / "outputs/phase15_verification/manual_calibration_v2/manual_calibrated_verifier.joblib")
     parser.add_argument("--true-error-threshold", type=float, default=None)
     parser.add_argument("--main-error-threshold", type=float, default=0.05)
-    parser.add_argument("--decision-mode", choices=["deletion_only", "conservative", "hardset"], default="deletion_only")
+    parser.add_argument(
+        "--decision-mode",
+        choices=["phone_diagnosis", "deletion_only", "conservative", "hardset"],
+        default="phone_diagnosis",
+    )
     parser.add_argument("--detect-deletion-as-error", action="store_true")
     parser.add_argument("--enable-asr-consistency-check", action="store_true")
+    parser.add_argument("--enable-asr", action="store_true", help="Run ASR text/audio consistency checking.")
+    parser.add_argument("--asr-model", choices=["auto", "whisper", "faster_whisper"], default="auto")
     parser.add_argument("--asr-transcript")
+    parser.add_argument("--enable-ctc-deletion", action="store_true")
+    parser.add_argument("--ctc-deletion-model", default=DEFAULT_CTC_MODEL)
     parser.add_argument("--text-audio-consistency-output", type=Path)
     parser.add_argument("--preprocessed-audio-output", type=Path)
     parser.add_argument("--no-auto-preprocess", action="store_true")
@@ -87,16 +96,24 @@ def main() -> None:
     frame = _add_verifier_defaults(frame)
     frame = add_evidence_columns(frame, _load_config(args.phase15_config))
     frame = _apply_manual_calibrator(frame, args.manual_calibrator, args.true_error_threshold)
-    frame, _ = detect_word_deletions(frame, mode=args.decision_mode)
+    if args.decision_mode != "phone_diagnosis":
+        frame, _ = detect_word_deletions(frame, mode=args.decision_mode)
     consistency = pd.DataFrame()
-    consistency_meta = {"asr_transcript": ""}
-    asr_check_enabled = args.enable_asr_consistency_check or bool(args.asr_transcript)
+    consistency_meta = {"asr_transcript": "", "asr_available": False}
+    asr_check_enabled = (
+        args.enable_asr_consistency_check
+        or args.enable_asr
+        or bool(args.asr_transcript)
+        or args.decision_mode == "deletion_only"
+    )
     word_asr_consistency = pd.DataFrame()
+    ctc_deletion_features = pd.DataFrame()
     if asr_check_enabled:
         consistency, consistency_meta = check_text_audio_consistency(
             audio_path=audio_for_alignment,
             target_text=args.text,
             asr_transcript=args.asr_transcript,
+            asr_model=args.asr_model,
         )
         if args.text_audio_consistency_output:
             payload = consistency_to_json_payload(consistency, consistency_meta)
@@ -107,15 +124,30 @@ def main() -> None:
             consistency,
             asr_transcript=str(consistency_meta.get("asr_transcript", "")),
         )
-        frame, _ = detect_word_deletions(frame, mode=args.decision_mode)
-        word_asr_consistency = compare_target_with_asr(
+        if args.decision_mode != "phone_diagnosis":
+            frame, _ = detect_word_deletions(frame, mode=args.decision_mode)
+        if bool(consistency_meta.get("asr_available")):
+            from pronunciation.text_audio_consistency import compare_target_with_asr
+
+            word_asr_consistency = compare_target_with_asr(
+                args.text,
+                str(consistency_meta.get("asr_transcript", "")),
+                asr_confidence=1.0 if args.asr_transcript else 0.7,
+            )
+    if args.enable_ctc_deletion or args.decision_mode == "deletion_only":
+        ctc_deletion_features = score_audio_word_deletions(
+            audio_for_alignment,
             args.text,
-            str(consistency_meta.get("asr_transcript", "")),
-            asr_confidence=1.0 if args.asr_transcript else 0.7,
+            model_id=args.ctc_deletion_model,
+            local_files_only=True,
         )
     out = _final_output(frame, args)
     out = ensure_prediction_coverage(out, target_word_table, g2p)
-    word_summary = build_word_summary(out, mode=args.decision_mode)
+    if args.decision_mode == "phone_diagnosis":
+        out = apply_phone_decisions(out)
+        word_summary = summarize_phone_decisions(out)
+    else:
+        word_summary = build_word_summary(out, mode=args.decision_mode)
     if asr_check_enabled:
         word_summary = merge_consistency_into_word_summary(
             word_summary,
@@ -129,10 +161,23 @@ def main() -> None:
             word_summary,
             detect_deletion_as_error=args.detect_deletion_as_error,
         )
-    word_summary = run_word_level_diagnosis(out, word_summary, word_asr_consistency)
-    word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
-    out = merge_word_diagnosis_into_phones(out, word_summary)
-    out = ensure_prediction_coverage(out, target_word_table, g2p)
+    if args.decision_mode == "phone_diagnosis":
+        word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
+    else:
+        word_summary = run_word_level_diagnosis(
+            out,
+            word_summary,
+            word_asr_consistency,
+            ctc_deletion_features,
+        )
+        word_summary = _ensure_text_audio_status(
+            word_summary,
+            transcript=str(consistency_meta.get("asr_transcript", "")),
+            available=bool(consistency_meta.get("asr_available")),
+        )
+        word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
+        out = merge_word_diagnosis_into_phones(out, word_summary)
+        out = ensure_prediction_coverage(out, target_word_table, g2p)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(args.output, index=False, encoding="utf-8-sig")
     if args.word_summary_output:
@@ -140,6 +185,32 @@ def main() -> None:
         word_summary.to_csv(args.word_summary_output, index=False, encoding="utf-8-sig")
     print(json.dumps({"rows": len(out), "decision_counts": out["decision"].value_counts().to_dict()}, indent=2, ensure_ascii=False))
     print(f"Wrote pronunciation prediction to {args.output}")
+
+
+def _ensure_text_audio_status(frame: pd.DataFrame, *, transcript: str, available: bool) -> pd.DataFrame:
+    out = frame.copy()
+    defaults: dict[str, object] = {
+        "asr_available": available,
+        "asr_transcript": transcript,
+        "asr_word": "",
+        "asr_edit_op": "not_checked",
+        "asr_word_status": "not_checked",
+        "asr_missing_word": False,
+        "asr_substituted_word": False,
+        "text_audio_consistency_status": "checked" if available else "not_checked",
+        "text_audio_mismatch": False,
+        "text_audio_mismatch_type": "none",
+        "text_audio_mismatch_score": 0.0,
+    }
+    for column, default in defaults.items():
+        if column not in out.columns:
+            out[column] = default
+        else:
+            out[column] = out[column].fillna(default)
+    out["asr_available"] = available
+    out["asr_transcript"] = transcript
+    out["text_audio_consistency_status"] = "checked" if available else "not_checked"
+    return out
 
 
 def _prediction_frame(alignment: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
@@ -347,6 +418,12 @@ def _final_output(frame: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame
         "model_error_score",
         "prob_correct",
         "manual_calibrated_error_probability",
+        "phone_error_probability",
+        "phone_error_percent",
+        "phone_decision",
+        "phone_error_type",
+        "phone_confidence",
+        "phone_score_source",
         "decision",
         "confidence",
         "error_type",
@@ -380,7 +457,16 @@ def _final_output(frame: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame
         "recognized_word",
         "deletion_score",
         "deletion_confidence",
+        "asr_context_support",
+        "asr_missing_confidence",
+        "ctc_deletion_score",
+        "ctc_deletion_margin",
+        "ctc_deletion_available",
+        "ctc_deletion_model",
+        "ctc_greedy_transcript",
+        "ctc_deletion_error",
         "phonological_relation",
+        "evidence_summary",
     ]
     for col in keep:
         if col not in out.columns:

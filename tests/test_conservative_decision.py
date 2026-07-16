@@ -59,9 +59,9 @@ class ConservativeDecisionTests(unittest.TestCase):
         hardset = apply_decision_rules(frame, DecisionConfig(mode="hardset"))
         self.assertLess(conservative["decision"].eq("true_error").sum(), hardset["decision"].eq("true_error").sum())
 
-    def test_webapp_default_uses_deletion_only_for_demo(self):
+    def test_webapp_default_uses_phone_diagnosis_for_demo(self):
         text = (ROOT / "webapp" / "app.py").read_text(encoding="utf-8")
-        self.assertIn('decision_mode="deletion_only"', text)
+        self.assertIn('decision_mode="phone_diagnosis"', text)
         self.assertNotIn('decision_mode="hardset"', text)
 
     def test_correct_audio_sanity_outputs_false_positive_report(self):

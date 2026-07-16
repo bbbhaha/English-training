@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from pronunciation.deletion_detector import build_word_summary, detect_word_deletions
 from pronunciation.text_audio_consistency import (
     check_text_audio_consistency,
+    compare_target_with_asr,
     merge_consistency_into_phone_frame,
     merge_consistency_into_word_summary,
 )
@@ -37,6 +38,19 @@ def _america_phone_frame(possible_missing: bool = True) -> pd.DataFrame:
 
 
 class TextAudioConsistencyTests(unittest.TestCase):
+    def test_compare_marks_all_missing_target_words(self):
+        result = compare_target_with_asr("SHE SEES THE BLUE BIRD", "SHE THE BIRD")
+        missing = result.loc[result["asr_missing_word"], "word"].tolist()
+        self.assertEqual(missing, ["SEES", "BLUE"])
+        self.assertTrue(result.loc[result["word"].isin(missing), "text_audio_mismatch_score"].eq(0.95).all())
+
+    def test_compare_marks_replaced_word(self):
+        result = compare_target_with_asr("SHE SEES BLUE", "SHE LIKES BLUE")
+        replaced = result[result["word"].eq("SEES")].iloc[0]
+        self.assertEqual(replaced["asr_edit_op"], "replace")
+        self.assertTrue(bool(replaced["asr_substituted_word"]))
+        self.assertEqual(replaced["text_audio_mismatch_score"], 0.85)
+
     def test_asr_transcript_deletion_marks_america_missing(self):
         consistency, meta = check_text_audio_consistency(
             target_text="MAKE AMERICA GREAT AGAIN",

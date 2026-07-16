@@ -192,8 +192,13 @@ function decisionText(row) {
 }
 
 function decisionClass(row) {
-  if (row.display_error_type === "deletion") return "error";
-  if (row.display_error_type === "possible_deletion" || row.display_error_type === "alignment_issue") return "review";
+  const displayedDecision = String(row.display_decision || "").trim();
+  if (displayedDecision === "\u6b63\u786e") return "correct";
+  if (displayedDecision === "\u53d1\u97f3\u9519\u8bef" || displayedDecision === "\u6f0f\u8bfb") return "error";
+  if (displayedDecision === "\u5355\u8bcd\u6682\u672a\u6536\u5f55") return "review";
+  if (displayedDecision.includes("\u9700\u590d\u6838")) return "review";
+  if (row.phone_decision === "true_error" || row.display_error_type === "mispronunciation") return "error";
+  if (row.phone_decision === "uncertain_review" || ["possible_mispronunciation", "alignment_issue"].includes(row.display_error_type)) return "review";
   return "correct";
 }
 
@@ -217,18 +222,17 @@ function renderRows(rows) {
     phoneTimeline.appendChild(pill);
 
     const tr = document.createElement("tr");
+    tr.className = `phone-row ${cls}`;
     tr.innerHTML = `
       <td>${row.word || ""}</td>
       <td><strong>${row.target_phone || ""}</strong></td>
-      <td><span class="badge ${cls}">${row.display_decision || "正确"}</span></td>
+      <td>${row.start_ms ?? ""}</td>
+      <td>${row.end_ms ?? ""}</td>
       <td>${row.display_error || "0%"}</td>
-      <td><span class="quality ${row.display_align === "bad" ? "bad" : "pass"}">${row.display_align || ""}</span></td>
+      <td><span class="badge ${cls}">${row.display_decision || "正确"}</span></td>
       <td>${row.display_error_type || ""}</td>
-      <td>${row.deletion_trigger_source || "none"}</td>
-      <td class="reason">${row.missing_word_reason || ""}</td>
-      <td>${row.lexicon_display || row.lexicon_status || ""}</td>
-      <td>${row.g2p_source || ""}</td>
-      <td>${row.g2p_confidence || ""}</td>
+      <td><span class="quality ${["bad", "suspect"].includes(row.display_align) ? "bad" : "pass"}">${row.display_align || ""}</span></td>
+      <td class="reason">${row.evidence_summary || ""}</td>
     `;
     resultBody.appendChild(tr);
   });

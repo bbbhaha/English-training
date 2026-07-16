@@ -69,7 +69,7 @@ def word_mispronunciation_detector(
         elif asr_op == "delete":
             decision, score = "uncertain_review", 0.0
             evidence.append("handled_by_deletion_detector")
-        elif inferred_pronunciation and (phone_difference or low_acoustic or moderate_acoustic or asr_op == "substitute"):
+        elif inferred_pronunciation and (phone_difference or low_acoustic or moderate_acoustic or asr_op in {"substitute", "replace"}):
             decision, score = "uncertain_review", 0.45
             evidence.append("inferred_pronunciation_requires_review")
         elif common and severity == "low":
@@ -79,11 +79,11 @@ def word_mispronunciation_detector(
             decision, score = "mispronounced", 0.9
         elif phone_difference and low_acoustic:
             decision, score = "mispronounced", 0.85
-        elif asr_op == "substitute" and low_acoustic:
+        elif asr_op in {"substitute", "replace"} and low_acoustic:
             decision, score = "mispronounced", 0.8
         elif common and not intelligibility:
             decision, score = ("acceptable_accent", 0.35) if not low_acoustic else ("uncertain_review", 0.55)
-        elif phone_difference or asr_op == "substitute" or moderate_acoustic:
+        elif phone_difference or asr_op in {"substitute", "replace"} or moderate_acoustic:
             decision, score = "uncertain_review", 0.55
         else:
             decision, score = "correct", 0.0
