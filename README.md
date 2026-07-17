@@ -421,3 +421,38 @@ python scripts/evaluate_manual_deletion_pairs.py `
   --model models/mandarin_deletion_fusion_v2.joblib `
   --output-dir outputs/manual_deletion_pairs/final_v2
 ```
+
+## Phone-level three-state diagnosis
+
+The default web backend and `--decision-mode phone_diagnosis` now use two
+independent phoneme CTC models plus a speaker-isolated Mandarin-L1 calibration
+model. The second model gates deletion and substitution false alarms. Every
+supported target phone receives one deployable state:
+
+```text
+correct / mispronounced / deleted
+读对 / 读错 / 漏读
+```
+
+Download the runtime models once:
+
+```powershell
+python scripts\download_deletion_models.py
+```
+
+Run an arbitrary WAV and target sentence:
+
+```powershell
+python scripts\predict_pronunciation.py `
+  --audio learner.wav `
+  --text "SHE SEES THE BLUE BIRD" `
+  --output outputs\demo\prediction.csv `
+  --word-summary-output outputs\demo\word_summary.csv `
+  --decision-mode phone_diagnosis `
+  --enable-asr `
+  --enable-ctc-deletion
+```
+
+See `docs/phone_three_state_diagnosis.md` for the CTC hypothesis method,
+Mandarin-L1 speaker split, held-out metrics, correct-audio sanity result,
+limitations, and reproduction commands.

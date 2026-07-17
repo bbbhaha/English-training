@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>端到端音素发音诊断</title>
-    <link rel="stylesheet" href="/static/styles.css?v=PHONE_DIAGNOSIS_V8" />
+    <link rel="stylesheet" href="/static/styles.css?v=PHONE_THREE_STATE_V5_IPA" />
   </head>
   <body>
     <main class="app-shell">
@@ -59,15 +59,15 @@
             <strong id="phoneCount">0</strong>
           </div>
           <div class="metric">
-            <span>可接受口音</span>
+            <span>读对</span>
             <strong id="accentCount">0</strong>
           </div>
           <div class="metric">
-            <span>真实错误</span>
+            <span>读错/漏读</span>
             <strong id="errorCount">0</strong>
           </div>
           <div class="metric">
-            <span>需复核</span>
+            <span>暂无法判断</span>
             <strong id="reviewCount">0</strong>
           </div>
         </div>
@@ -81,11 +81,11 @@
             <thead>
               <tr>
                 <th>Word</th>
-                <th>Phone</th>
+                <th>IPA</th>
                 <th>Start ms</th>
                 <th>End ms</th>
-                <th>Error</th>
-                <th>Decision</th>
+                <th>三状态概率</th>
+                <th>判断</th>
                 <th>Error Type</th>
                 <th>Align</th>
                 <th>Evidence</th>
@@ -103,6 +103,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=PHONE_DIAGNOSIS_V8"></script>
+    <script src="/static/app.js?v=PHONE_THREE_STATE_V5_IPA"></script>
   </body>
 </html>

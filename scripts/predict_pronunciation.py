@@ -21,13 +21,21 @@ from phase15_verification.analysis import add_evidence_columns
 from pronunciation.alignment import align_audio_to_text, save_alignment_csv
 from pronunciation.audio_preprocess import inspect_audio, preprocess_audio
 from pronunciation.calibration import apply_manual_calibrator
+from pronunciation.ctc_phone_diagnosis import (
+    DEFAULT_PHONE_CTC_MODEL,
+    DEFAULT_REFERENCE_PHONE_CTC_MODEL,
+    DEFAULT_THREE_STATE_MODEL,
+    apply_phone_three_state_model,
+    force_confirmed_word_deletions,
+    score_audio_phones_ctc,
+    summarize_three_state_phones,
+)
 from pronunciation.ctc_word_deletion import DEFAULT_CTC_MODEL, score_audio_word_deletions
 from pronunciation.decision import DecisionConfig, apply_decision_rules, apply_deletion_only_override, is_good_alignment
 from pronunciation.deletion_detector import build_word_summary, detect_word_deletions
 from pronunciation.g2p import write_g2p_json
 from pronunciation.final_word_decision import merge_word_diagnosis_into_phones, run_word_level_diagnosis
 from pronunciation.mandarin_deletion_fusion import DEFAULT_MODEL_PATH as DEFAULT_MANDARIN_DELETION_MODEL
-from pronunciation.phone_decision import apply_phone_decisions, summarize_phone_decisions
 from pronunciation.text_audio_consistency import (
     check_text_audio_consistency,
     consistency_to_json_payload,
@@ -72,6 +80,14 @@ def main() -> None:
     parser.add_argument("--asr-transcript")
     parser.add_argument("--enable-ctc-deletion", action="store_true")
     parser.add_argument("--ctc-deletion-model", default=DEFAULT_CTC_MODEL)
+    parser.add_argument("--phone-ctc-model", default=DEFAULT_PHONE_CTC_MODEL)
+    parser.add_argument("--reference-phone-ctc-model", default=DEFAULT_REFERENCE_PHONE_CTC_MODEL)
+    parser.add_argument("--phone-three-state-model", type=Path, default=DEFAULT_THREE_STATE_MODEL)
+    parser.add_argument(
+        "--allow-phone-model-download",
+        action="store_true",
+        help="Allow downloading the pretrained L2 phone CTC model when it is not cached.",
+    )
     parser.add_argument(
         "--mandarin-deletion-model",
         type=Path,
@@ -112,6 +128,7 @@ def main() -> None:
         or args.enable_asr
         or bool(args.asr_transcript)
         or args.decision_mode == "deletion_only"
+        or args.decision_mode == "phone_diagnosis"
     )
     word_asr_consistency = pd.DataFrame()
     ctc_deletion_features = pd.DataFrame()
@@ -141,7 +158,7 @@ def main() -> None:
                 str(consistency_meta.get("asr_transcript", "")),
                 asr_confidence=1.0 if args.asr_transcript else 0.7,
             )
-    if args.enable_ctc_deletion or args.decision_mode == "deletion_only":
+    if args.enable_ctc_deletion or args.decision_mode in {"deletion_only", "phone_diagnosis"}:
         ctc_deletion_features = score_audio_word_deletions(
             audio_for_alignment,
             args.text,
@@ -151,8 +168,25 @@ def main() -> None:
     out = _final_output(frame, args)
     out = ensure_prediction_coverage(out, target_word_table, g2p)
     if args.decision_mode == "phone_diagnosis":
-        out = apply_phone_decisions(out)
-        word_summary = summarize_phone_decisions(out)
+        phone_evidence = score_audio_phones_ctc(
+            audio_for_alignment,
+            out,
+            model_id=args.phone_ctc_model,
+            local_files_only=not args.allow_phone_model_download,
+        )
+        reference_phone_evidence = score_audio_phones_ctc(
+            audio_for_alignment,
+            out,
+            model_id=args.reference_phone_ctc_model,
+            local_files_only=not args.allow_phone_model_download,
+        )
+        out = apply_phone_three_state_model(
+            out,
+            phone_evidence,
+            classifier_path=args.phone_three_state_model,
+            reference_evidence=reference_phone_evidence,
+        )
+        word_summary = summarize_three_state_phones(out)
     else:
         word_summary = build_word_summary(out, mode=args.decision_mode)
     if asr_check_enabled:
@@ -169,7 +203,21 @@ def main() -> None:
             detect_deletion_as_error=args.detect_deletion_as_error,
         )
     if args.decision_mode == "phone_diagnosis":
+        word_summary = run_word_level_diagnosis(
+            out,
+            word_summary,
+            word_asr_consistency,
+            ctc_deletion_features,
+            args.mandarin_deletion_model,
+        )
+        word_summary = _ensure_text_audio_status(
+            word_summary,
+            transcript=str(consistency_meta.get("asr_transcript", "")),
+            available=bool(consistency_meta.get("asr_available")),
+        )
         word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
+        out = force_confirmed_word_deletions(out, word_summary)
+        out = ensure_prediction_coverage(out, target_word_table, g2p)
     else:
         word_summary = run_word_level_diagnosis(
             out,
@@ -191,7 +239,14 @@ def main() -> None:
     if args.word_summary_output:
         args.word_summary_output.parent.mkdir(parents=True, exist_ok=True)
         word_summary.to_csv(args.word_summary_output, index=False, encoding="utf-8-sig")
-    print(json.dumps({"rows": len(out), "decision_counts": out["decision"].value_counts().to_dict()}, indent=2, ensure_ascii=False))
+    summary_column = "phone_state" if "phone_state" in out.columns else "decision"
+    print(
+        json.dumps(
+            {"rows": len(out), "phone_state_counts": out[summary_column].value_counts().to_dict()},
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     print(f"Wrote pronunciation prediction to {args.output}")
 
 

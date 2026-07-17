@@ -95,6 +95,8 @@ class PronunciationE2ETests(unittest.TestCase):
                 str(tmp_path / "missing_phase1.joblib"),
                 "--manual-calibrator",
                 str(tmp_path / "missing_calibrator.joblib"),
+                "--phone-ctc-model",
+                "local/missing-phone-ctc-model",
             ]
             result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=True)
             self.assertIn("Wrote pronunciation prediction", result.stdout)

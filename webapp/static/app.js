@@ -29,6 +29,56 @@ let isRecording = false;
 let drawHandle = null;
 let analyser = null;
 
+const ARPABET_TO_IPA = Object.freeze({
+  AA: "ɑ",
+  AE: "æ",
+  AH: "ʌ",
+  AO: "ɔ",
+  AW: "aʊ",
+  AY: "aɪ",
+  B: "b",
+  CH: "tʃ",
+  D: "d",
+  DH: "ð",
+  EH: "ɛ",
+  ER: "ɝ",
+  EY: "eɪ",
+  F: "f",
+  G: "ɡ",
+  HH: "h",
+  IH: "ɪ",
+  IY: "i",
+  JH: "dʒ",
+  K: "k",
+  L: "l",
+  M: "m",
+  N: "n",
+  NG: "ŋ",
+  OW: "oʊ",
+  OY: "ɔɪ",
+  P: "p",
+  R: "ɹ",
+  S: "s",
+  SH: "ʃ",
+  T: "t",
+  TH: "θ",
+  UH: "ʊ",
+  UW: "u",
+  V: "v",
+  W: "w",
+  Y: "j",
+  Z: "z",
+  ZH: "ʒ",
+});
+
+function ipaPhone(phone) {
+  const raw = String(phone || "").trim().toUpperCase();
+  if (!raw || raw === "<UNK>") return "—";
+  const normalized = raw.replace(/[0-2]$/, "").replace(/[^A-Z]+$/, "");
+  const ipa = ARPABET_TO_IPA[normalized];
+  return ipa ? `/${ipa}/` : "—";
+}
+
 function setStatus(text) {
   modelStatus.textContent = text;
 }
@@ -194,7 +244,8 @@ function decisionText(row) {
 function decisionClass(row) {
   const displayedDecision = String(row.display_decision || "").trim();
   if (displayedDecision === "\u6b63\u786e") return "correct";
-  if (displayedDecision === "\u53d1\u97f3\u9519\u8bef" || displayedDecision === "\u6f0f\u8bfb") return "error";
+  if (displayedDecision === "\u8bfb\u5bf9") return "correct";
+  if (displayedDecision === "\u53d1\u97f3\u9519\u8bef" || displayedDecision === "\u8bfb\u9519" || displayedDecision === "\u6f0f\u8bfb") return "error";
   if (displayedDecision === "\u5355\u8bcd\u6682\u672a\u6536\u5f55") return "review";
   if (displayedDecision.includes("\u9700\u590d\u6838")) return "review";
   if (row.phone_decision === "true_error" || row.display_error_type === "mispronunciation") return "error";
@@ -215,17 +266,18 @@ function renderRows(rows) {
   resultBody.innerHTML = "";
   rows.forEach((row) => {
     const cls = decisionClass(row);
+    const displayedPhone = ipaPhone(row.target_phone);
     const pill = document.createElement("div");
     pill.className = `phone-pill ${cls}`;
-    pill.title = `${row.word} ${row.target_phone} ${decisionText(row)}`;
-    pill.textContent = row.target_phone || "?";
+    pill.title = `${row.word} ${displayedPhone} (ARPAbet: ${row.target_phone || "unknown"}) ${decisionText(row)}`;
+    pill.textContent = displayedPhone;
     phoneTimeline.appendChild(pill);
 
     const tr = document.createElement("tr");
     tr.className = `phone-row ${cls}`;
     tr.innerHTML = `
       <td>${row.word || ""}</td>
-      <td><strong>${row.target_phone || ""}</strong></td>
+      <td><strong class="ipa-phone">${displayedPhone}</strong></td>
       <td>${row.start_ms ?? ""}</td>
       <td>${row.end_ms ?? ""}</td>
       <td>${row.display_error || "0%"}</td>
@@ -278,7 +330,7 @@ submitBtn.addEventListener("click", async () => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "诊断失败");
     phoneCount.textContent = data.n_phones;
-    accentCount.textContent = data.n_acceptable_accent;
+    accentCount.textContent = data.n_correct;
     errorCount.textContent = data.n_true_error;
     reviewCount.textContent = data.n_uncertain_review;
     renderRows(data.rows);

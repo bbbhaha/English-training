@@ -32,8 +32,19 @@ class FrontendPhoneStateColorTests(unittest.TestCase):
 
     def test_static_assets_are_cache_busted(self):
         html = (ROOT / "webapp" / "static" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("styles.css?v=PHONE_DIAGNOSIS_V8", html)
-        self.assertIn("app.js?v=PHONE_DIAGNOSIS_V8", html)
+        self.assertIn("styles.css?v=PHONE_THREE_STATE_V5_IPA", html)
+        self.assertIn("app.js?v=PHONE_THREE_STATE_V5_IPA", html)
+
+    def test_phone_display_uses_common_ipa_notation(self):
+        javascript = (ROOT / "webapp" / "static" / "app.js").read_text(encoding="utf-8")
+        html = (ROOT / "webapp" / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('M: "m"', javascript)
+        self.assertIn('EY: "eɪ"', javascript)
+        self.assertIn('AH: "ʌ"', javascript)
+        self.assertIn("function ipaPhone(phone)", javascript)
+        self.assertIn("pill.textContent = displayedPhone", javascript)
+        self.assertIn('class="ipa-phone"', javascript)
+        self.assertIn("<th>IPA</th>", html)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 import pandas as pd
 
 
-APP_VERSION = "PHONE_DIAGNOSIS_V7"
+APP_VERSION = "PHONE_THREE_STATE_V5_IPA"
 print(f"========== RUNNING NEW APP VERSION: {APP_VERSION} ==========", flush=True)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +42,15 @@ from predict_pronunciation import (  # noqa: E402
     _score_phase1,
     ensure_prediction_coverage,
 )
-from pronunciation.phone_decision import apply_phone_decisions, summarize_phone_decisions  # noqa: E402
+from pronunciation.ctc_phone_diagnosis import (  # noqa: E402
+    DEFAULT_PHONE_CTC_MODEL,
+    DEFAULT_REFERENCE_PHONE_CTC_MODEL,
+    DEFAULT_THREE_STATE_MODEL,
+    apply_phone_three_state_model,
+    force_confirmed_word_deletions,
+    score_audio_phones_ctc,
+    summarize_three_state_phones,
+)
 from pronunciation.ctc_word_deletion import score_audio_word_deletions  # noqa: E402
 from pronunciation.final_word_decision import run_word_level_diagnosis  # noqa: E402
 from pronunciation.mandarin_deletion_fusion import DEFAULT_MODEL_PATH as DEFAULT_MANDARIN_DELETION_MODEL  # noqa: E402
@@ -57,6 +65,16 @@ DISPLAY_COLUMNS = [
     "start_ms",
     "end_ms",
     "phone_error_percent",
+    "phone_state",
+    "phone_state_zh",
+    "phone_state_confidence",
+    "phone_probability_correct",
+    "phone_probability_mispronounced",
+    "phone_probability_deleted",
+    "recognized_phone",
+    "reference_recognized_phone",
+    "reference_ctc_deletion_margin",
+    "reference_deletion_supported",
     "phone_decision",
     "phone_error_type",
     "alignment_quality",
@@ -174,6 +192,10 @@ def diagnose(
         asr_transcript=None,
         asr_model="auto",
         mandarin_deletion_model=DEFAULT_MANDARIN_DELETION_MODEL,
+        phone_ctc_model=DEFAULT_PHONE_CTC_MODEL,
+        reference_phone_ctc_model=DEFAULT_REFERENCE_PHONE_CTC_MODEL,
+        phone_three_state_model=DEFAULT_THREE_STATE_MODEL,
+        allow_phone_model_download=False,
     )
 
     target_word_table = build_target_word_table(text, utterance_id=utterance_id)
@@ -195,8 +217,25 @@ def diagnose(
     frame = _apply_manual_calibrator(frame, args.manual_calibrator, args.true_error_threshold)
     out = _final_output(frame, args)
     out = ensure_prediction_coverage(out, target_word_table, g2p)
-    out = apply_phone_decisions(out)
-    word_summary = summarize_phone_decisions(out)
+    phone_evidence = score_audio_phones_ctc(
+        audio_for_alignment,
+        out,
+        model_id=args.phone_ctc_model,
+        local_files_only=not args.allow_phone_model_download,
+    )
+    reference_phone_evidence = score_audio_phones_ctc(
+        audio_for_alignment,
+        out,
+        model_id=args.reference_phone_ctc_model,
+        local_files_only=not args.allow_phone_model_download,
+    )
+    out = apply_phone_three_state_model(
+        out,
+        phone_evidence,
+        classifier_path=args.phone_three_state_model,
+        reference_evidence=reference_phone_evidence,
+    )
+    word_summary = summarize_three_state_phones(out)
     word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
     consistency, consistency_meta = check_text_audio_consistency(
         audio_path=audio_for_alignment,
@@ -218,6 +257,7 @@ def diagnose(
     word_summary["asr_transcript"] = str(consistency_meta.get("asr_transcript", ""))
     word_summary["asr_available"] = bool(consistency_meta.get("asr_available", False))
     word_summary = ensure_word_summary_coverage(target_word_table, word_summary)
+    out = force_confirmed_word_deletions(out, word_summary)
     out.to_csv(output, index=False, encoding="utf-8-sig")
     word_summary.to_csv(word_summary_output, index=False, encoding="utf-8-sig")
 
@@ -464,13 +504,21 @@ def apply_phone_diagnosis_display(
             how="left",
         )
 
-    display["display_decision"] = display["phone_decision"].astype(str).map(
-        {"correct": "正确", "true_error": "发音错误", "uncertain_review": "需复核"}
-    ).fillna("需复核")
-    display["display_error"] = [
-        format_phone_error_display(percent, error_type)
-        for percent, error_type in zip(display["phone_error_percent"], display["phone_error_type"])
-    ]
+    if "phone_state" in display.columns:
+        display["display_decision"] = display["phone_state"].astype(str).map(
+            {"correct": "读对", "mispronounced": "读错", "deleted": "漏读", "unavailable": "单词暂未收录"}
+        ).fillna("单词暂未收录")
+    else:
+        display["display_decision"] = display["phone_decision"].astype(str).map(
+            {"correct": "正确", "true_error": "发音错误", "uncertain_review": "需复核"}
+        ).fillna("单词暂未收录")
+    if "phone_state" in display.columns:
+        display["display_error"] = display.apply(format_phone_state_probability, axis=1)
+    else:
+        display["display_error"] = [
+            format_phone_error_display(percent, error_type)
+            for percent, error_type in zip(display["phone_error_percent"], display["phone_error_type"])
+        ]
     display["display_align"] = display["alignment_quality"].astype(str)
     display["display_error_type"] = display["phone_error_type"].astype(str)
     for index, row in display.iterrows():
@@ -495,23 +543,31 @@ def apply_phone_diagnosis_display(
                 "suspect",
                 "deletion",
             ]
-        elif deletion_type == "possible_deletion" or deletion_decision == "possible_deletion":
-            display.loc[index, ["display_decision", "display_error", "display_align", "display_error_type"]] = [
-                "疑似漏读/需复核",
-                "疑似漏读",
-                "suspect",
-                "possible_deletion",
-            ]
-        if _text(row.get("word_evidence_summary")):
+        if deletion_type == "deletion" and _text(row.get("word_evidence_summary")):
             display.loc[index, "evidence_summary"] = _text(row.get("word_evidence_summary"))
     return display
+
+
+def format_phone_state_probability(row: pd.Series) -> str:
+    state = _text(row.get("phone_state"))
+    labels = {"correct": "读对", "mispronounced": "读错", "deleted": "漏读"}
+    probability_columns = {
+        "correct": "phone_probability_correct",
+        "mispronounced": "phone_probability_mispronounced",
+        "deleted": "phone_probability_deleted",
+    }
+    if state not in labels:
+        return "无法判断"
+    probability = _float_value(row.get(probability_columns[state]), 0.0)
+    return f"{labels[state]} {probability * 100:.0f}%"
 
 
 def format_phone_error_display(percent: object, error_type: object) -> str:
     value = _float_value(percent, 50.0)
     error = _text(error_type)
     label = {
-        "mispronunciation": "发音错误",
+        "mispronunciation": "读错",
+        "deletion": "漏读",
         "possible_mispronunciation": "疑似错误",
         "alignment_issue": "对齐失败",
     }.get(error, "")

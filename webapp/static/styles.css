@@ -348,6 +348,12 @@ th {
   text-transform: uppercase;
 }
 
+.ipa-phone {
+  font-family: "Segoe UI", "Noto Sans", Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
 tr:last-child td {
   border-bottom: 0;
 }
